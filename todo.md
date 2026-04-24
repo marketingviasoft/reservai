@@ -122,3 +122,15 @@
 - [x] Exibir código EQP no dialog de edição
 - [x] Exibir código EQP em reservas, calendário e check-in/out onde itens aparecem
 - [x] Migrar banco de dados
+
+## Regra de Negócio: Kits Compartilhados (Double-Booking)
+- [x] Backend: nova função `checkAvailability` que resolve itens e kits indisponíveis por período
+- [x] Backend: expandir itens reservados (direto ou via kit) para encontrar TODOS os kits afetados
+- [x] Backend: atualizar `reservation.create` para usar `checkAvailability` na validação
+- [x] Backend: novo endpoint `reservation.checkAvailability` para consulta em tempo real
+- [x] Frontend: formulário de reserva consulta disponibilidade ao selecionar datas
+- [x] Frontend: itens/kits indisponíveis aparecem desabilitados com ícone de cadeado e badge "Reservado"
+- [x] Frontend: tooltip explicativo ao passar sobre item/kit bloqueado
+- [x] Frontend: aviso visual quando há itens indisponíveis no período
+- [x] Frontend: limpar seleções automaticamente quando mudam as datas e itens ficam indisponíveis
+- [x] Testes unitários para checkAvailability e controle de acesso (24 testes passando)

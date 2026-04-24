@@ -235,3 +235,82 @@ describe("dashboard router - access control", () => {
     await expect(caller.dashboard.stats()).rejects.toThrow();
   });
 });
+
+describe("reservation.checkAvailability - access control", () => {
+  it("rejects unauthenticated user from checking availability", async () => {
+    const ctx = createContext(null);
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.reservation.checkAvailability({
+        startDate: Date.now(),
+        endDate: Date.now() + 86400000,
+      })
+    ).rejects.toThrow();
+  });
+
+  it("allows authenticated user to check availability", async () => {
+    const user = createMockUser({ role: "user" });
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+    // Should not fail at auth level - will fail at DB level or return empty
+    try {
+      const result = await caller.reservation.checkAvailability({
+        startDate: Date.now(),
+        endDate: Date.now() + 86400000,
+      });
+      // If DB is available, should return the expected shape
+      expect(result).toHaveProperty("unavailableItemIds");
+      expect(result).toHaveProperty("unavailableKitIds");
+      expect(result).toHaveProperty("conflicts");
+      expect(Array.isArray(result.unavailableItemIds)).toBe(true);
+      expect(Array.isArray(result.unavailableKitIds)).toBe(true);
+    } catch (e: any) {
+      // Should fail at DB level, not auth level
+      expect(e.message).not.toContain("FORBIDDEN");
+      expect(e.message).not.toContain("UNAUTHORIZED");
+    }
+  });
+
+  it("requires valid date range for availability check", async () => {
+    const user = createMockUser();
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      // @ts-expect-error - testing missing required fields
+      caller.reservation.checkAvailability({ startDate: Date.now() })
+    ).rejects.toThrow();
+  });
+});
+
+describe("reservation.create - shared kit conflict validation", () => {
+  it("validates that create requires at least valid dates", async () => {
+    const user = createMockUser();
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+    // Missing dates should throw validation error
+    await expect(
+      // @ts-expect-error - testing missing required fields
+      caller.reservation.create({
+        itemIds: [1],
+        kitIds: [],
+      })
+    ).rejects.toThrow();
+  });
+
+  it("accepts excludeReservationId parameter for availability check", async () => {
+    const user = createMockUser({ role: "user" });
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+    try {
+      const result = await caller.reservation.checkAvailability({
+        startDate: Date.now(),
+        endDate: Date.now() + 86400000,
+        excludeReservationId: 999,
+      });
+      expect(result).toHaveProperty("unavailableItemIds");
+      expect(result).toHaveProperty("unavailableKitIds");
+    } catch (e: any) {
+      expect(e.message).not.toContain("FORBIDDEN");
+    }
+  });
+});

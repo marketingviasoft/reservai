@@ -173,29 +173,45 @@ const reservationRouter = router({
       kitIds: z.array(z.number()).default([]),
     }))
     .mutation(async ({ ctx, input }) => {
-      // Check conflicts for items
+      // Full availability check with shared-kit resolution
+      const availability = await db.checkAvailability(input.startDate, input.endDate);
+
+      // Check conflicts for directly selected items
       if (input.itemIds.length > 0) {
-        const itemConflicts = await db.checkItemConflicts(input.itemIds, input.startDate, input.endDate);
-        if (itemConflicts.length > 0) {
-          const conflictNames = itemConflicts.map((c) => c.itemName).join(", ");
-          throw new Error(`Conflito de reserva para os itens: ${conflictNames}`);
+        const conflictingItems = input.itemIds.filter((id) => availability.unavailableItemIds.includes(id));
+        if (conflictingItems.length > 0) {
+          const names = availability.conflicts
+            .filter((c) => conflictingItems.includes(c.itemId))
+            .map((c) => c.itemName || c.itemCode || `Item #${c.itemId}`)
+            .filter((v, i, a) => a.indexOf(v) === i);
+          throw new Error(`Conflito de reserva para os itens: ${names.join(", ")}`);
         }
       }
-      // Check conflicts for kits
+
+      // Check conflicts for kits (including shared-item resolution)
       if (input.kitIds.length > 0) {
-        const kitConflicts = await db.checkKitConflicts(input.kitIds, input.startDate, input.endDate);
-        if (kitConflicts.length > 0) {
-          throw new Error(`Conflito de reserva para kits ou itens vinculados a kits`);
-        }
-        const kitItemIds = await db.getKitItemIds(input.kitIds);
-        if (kitItemIds.length > 0) {
-          const itemConflicts = await db.checkItemConflicts(kitItemIds, input.startDate, input.endDate);
-          if (itemConflicts.length > 0) {
-            const conflictNames = itemConflicts.map((c) => c.itemName).join(", ");
-            throw new Error(`Conflito: itens do kit já reservados: ${conflictNames}`);
+        const conflictingKits = input.kitIds.filter((id) => availability.unavailableKitIds.includes(id));
+        if (conflictingKits.length > 0) {
+          // Get kit names for error message
+          const kitNames: string[] = [];
+          for (const kitId of conflictingKits) {
+            const kit = await db.getKitById(kitId);
+            kitNames.push(kit?.name || `Kit #${kitId}`);
           }
+          throw new Error(`Conflito: kits indisponíveis (itens compartilhados já reservados): ${kitNames.join(", ")}`);
+        }
+        // Also check if any item inside selected kits conflicts with directly selected items
+        const kitItemIds = await db.getKitItemIds(input.kitIds);
+        const conflictingKitItems = kitItemIds.filter((id) => availability.unavailableItemIds.includes(id));
+        if (conflictingKitItems.length > 0) {
+          const names = availability.conflicts
+            .filter((c) => conflictingKitItems.includes(c.itemId))
+            .map((c) => c.itemName || c.itemCode || `Item #${c.itemId}`)
+            .filter((v, i, a) => a.indexOf(v) === i);
+          throw new Error(`Conflito: itens do kit já reservados: ${names.join(", ")}`);
         }
       }
+
       // Reserva é atrelada ao colaborador logado (ctx.user.id)
       return db.createReservation(
         { userId: ctx.user.id, startDate: input.startDate, endDate: input.endDate, notes: input.notes, status: "pendente" },
@@ -290,6 +306,16 @@ const reservationRouter = router({
         ? await db.checkKitConflicts(input.kitIds, input.startDate, input.endDate, input.excludeReservationId)
         : [];
       return { itemConflicts, kitConflicts, hasConflicts: itemConflicts.length > 0 || kitConflicts.length > 0 };
+    }),
+  // Period-aware availability: returns unavailable items & kits (including shared-kit resolution)
+  checkAvailability: protectedProcedure
+    .input(z.object({
+      startDate: z.number(),
+      endDate: z.number(),
+      excludeReservationId: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      return db.checkAvailability(input.startDate, input.endDate, input.excludeReservationId);
     }),
   delete: adminProcedure
     .input(z.object({ id: z.number() }))

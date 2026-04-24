@@ -30,6 +30,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -45,6 +50,8 @@ import {
   Eye,
   User,
   Building2,
+  AlertTriangle,
+  Lock,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { useSearch } from "wouter";
@@ -111,14 +118,29 @@ export default function Reservations() {
     }
   }, []);
 
+  // Compute date range for availability check
+  const availabilityDates = useMemo(() => {
+    if (!form.startDate || !form.endDate) return null;
+    const s = new Date(form.startDate).getTime();
+    const e = new Date(form.endDate).getTime();
+    if (isNaN(s) || isNaN(e) || e <= s) return null;
+    return { startDate: s, endDate: e };
+  }, [form.startDate, form.endDate]);
+
   const { data: reservations, isLoading } = trpc.reservation.list.useQuery({
     status: statusFilter !== "all" ? statusFilter : undefined,
   });
-  const { data: items } = trpc.item.list.useQuery();
-  const { data: kits } = trpc.kit.list.useQuery();
+  const { data: allItems } = trpc.item.list.useQuery();
+  const { data: allKits } = trpc.kit.list.useQuery();
   const { data: detail } = trpc.reservation.getById.useQuery(
     { id: detailId! },
     { enabled: detailId !== null }
+  );
+
+  // Real-time availability check based on selected dates
+  const { data: availability } = trpc.reservation.checkAvailability.useQuery(
+    { startDate: availabilityDates!.startDate, endDate: availabilityDates!.endDate },
+    { enabled: !!availabilityDates && dialogOpen }
   );
 
   const createMutation = trpc.reservation.create.useMutation({
@@ -169,6 +191,8 @@ export default function Reservations() {
   };
 
   const toggleItem = (itemId: number) => {
+    const isUnavailable = availability?.unavailableItemIds?.includes(itemId);
+    if (isUnavailable) return; // Prevent selecting unavailable items
     setForm((prev) => ({
       ...prev,
       selectedItemIds: prev.selectedItemIds.includes(itemId)
@@ -178,6 +202,8 @@ export default function Reservations() {
   };
 
   const toggleKit = (kitId: number) => {
+    const isUnavailable = availability?.unavailableKitIds?.includes(kitId);
+    if (isUnavailable) return; // Prevent selecting unavailable kits
     setForm((prev) => ({
       ...prev,
       selectedKitIds: prev.selectedKitIds.includes(kitId)
@@ -185,6 +211,20 @@ export default function Reservations() {
         : [...prev.selectedKitIds, kitId],
     }));
   };
+
+  // Clear selections that become unavailable when dates change
+  useEffect(() => {
+    if (!availability) return;
+    setForm((prev) => ({
+      ...prev,
+      selectedItemIds: prev.selectedItemIds.filter(
+        (id) => !availability.unavailableItemIds.includes(id)
+      ),
+      selectedKitIds: prev.selectedKitIds.filter(
+        (id) => !availability.unavailableKitIds.includes(id)
+      ),
+    }));
+  }, [availability]);
 
   const filteredReservations = useMemo(() => {
     if (!reservations) return [];
@@ -202,6 +242,19 @@ export default function Reservations() {
         )
     );
   }, [reservations, search]);
+
+  // Separate available and unavailable items/kits for the form
+  const availableItems = useMemo(() => {
+    if (!allItems) return [];
+    return allItems.filter((item) => item.status === "disponivel");
+  }, [allItems]);
+
+  const availableKits = useMemo(() => {
+    if (!allKits) return [];
+    return allKits.filter((kit) => kit.status === "completo");
+  }, [allKits]);
+
+  const hasDatesSelected = !!availabilityDates;
 
   return (
     <div className="space-y-6">
@@ -404,30 +457,79 @@ export default function Reservations() {
                 />
               </div>
             </div>
+
+            {/* Availability notice */}
+            {hasDatesSelected && availability && (availability.unavailableItemIds.length > 0 || availability.unavailableKitIds.length > 0) && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div className="text-xs">
+                  <p className="font-medium mb-0.5">Itens indisponíveis para o período selecionado</p>
+                  <p className="text-amber-700">
+                    Itens e kits com conflito estão marcados com cadeado e não podem ser selecionados.
+                    Kits que compartilham itens com reservas existentes também ficam bloqueados.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {!hasDatesSelected && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800">
+                <Calendar className="h-4 w-4 shrink-0 mt-0.5" />
+                <p className="text-xs">
+                  Selecione as datas de início e fim para ver a disponibilidade dos itens e kits.
+                </p>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Itens</Label>
-              <div className="border rounded-lg max-h-40 overflow-y-auto">
-                {items && items.filter((item) => item.status === "disponivel").length > 0 ? (
-                  items
-                    .filter((item) => item.status === "disponivel")
-                    .map((item) => (
-                      <label
-                        key={item.id}
-                        className="flex items-center gap-3 px-3 py-2 hover:bg-muted/50 transition-colors cursor-pointer border-b last:border-b-0"
-                      >
-                        <Checkbox
-                          checked={form.selectedItemIds.includes(item.id)}
-                          onCheckedChange={() => toggleItem(item.id)}
-                        />
-                        <Package className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-sm">{item.name}</span>
-                        {item.code && (
-                          <span className="text-xs text-muted-foreground font-mono ml-auto">
-                            {item.code}
-                          </span>
+              <div className="border rounded-lg max-h-44 overflow-y-auto">
+                {availableItems.length > 0 ? (
+                  availableItems.map((item) => {
+                    const isUnavailable = hasDatesSelected && availability?.unavailableItemIds?.includes(item.id);
+                    return (
+                      <Tooltip key={item.id}>
+                        <TooltipTrigger asChild>
+                          <label
+                            className={`flex items-center gap-3 px-3 py-2 transition-colors border-b last:border-b-0 ${
+                              isUnavailable
+                                ? "opacity-50 cursor-not-allowed bg-muted/30"
+                                : "hover:bg-muted/50 cursor-pointer"
+                            }`}
+                          >
+                            <Checkbox
+                              checked={form.selectedItemIds.includes(item.id)}
+                              onCheckedChange={() => toggleItem(item.id)}
+                              disabled={isUnavailable}
+                            />
+                            {isUnavailable ? (
+                              <Lock className="h-3.5 w-3.5 text-amber-500" />
+                            ) : (
+                              <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                            )}
+                            <span className={`text-sm ${isUnavailable ? "line-through" : ""}`}>
+                              {item.name}
+                            </span>
+                            {item.code && (
+                              <span className="text-xs text-muted-foreground font-mono ml-auto">
+                                {item.code}
+                              </span>
+                            )}
+                            {isUnavailable && (
+                              <Badge variant="outline" className="text-[10px] ml-1 border-amber-300 text-amber-600 px-1.5 py-0">
+                                Reservado
+                              </Badge>
+                            )}
+                          </label>
+                        </TooltipTrigger>
+                        {isUnavailable && (
+                          <TooltipContent side="left">
+                            <p className="text-xs">Este item já está reservado no período selecionado</p>
+                          </TooltipContent>
                         )}
-                      </label>
-                    ))
+                      </Tooltip>
+                    );
+                  })
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-3">
                     Nenhum item disponível
@@ -437,26 +539,53 @@ export default function Reservations() {
             </div>
             <div className="space-y-2">
               <Label>Kits</Label>
-              <div className="border rounded-lg max-h-40 overflow-y-auto">
-                {kits && kits.filter((kit) => kit.status === "completo").length > 0 ? (
-                  kits
-                    .filter((kit) => kit.status === "completo")
-                    .map((kit) => (
-                      <label
-                        key={kit.id}
-                        className="flex items-center gap-3 px-3 py-2 hover:bg-muted/50 transition-colors cursor-pointer border-b last:border-b-0"
-                      >
-                        <Checkbox
-                          checked={form.selectedKitIds.includes(kit.id)}
-                          onCheckedChange={() => toggleKit(kit.id)}
-                        />
-                        <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-sm">{kit.name}</span>
-                        <span className="text-xs text-muted-foreground ml-auto">
-                          {kit.items?.length || 0} itens
-                        </span>
-                      </label>
-                    ))
+              <div className="border rounded-lg max-h-44 overflow-y-auto">
+                {availableKits.length > 0 ? (
+                  availableKits.map((kit) => {
+                    const isUnavailable = hasDatesSelected && availability?.unavailableKitIds?.includes(kit.id);
+                    return (
+                      <Tooltip key={kit.id}>
+                        <TooltipTrigger asChild>
+                          <label
+                            className={`flex items-center gap-3 px-3 py-2 transition-colors border-b last:border-b-0 ${
+                              isUnavailable
+                                ? "opacity-50 cursor-not-allowed bg-muted/30"
+                                : "hover:bg-muted/50 cursor-pointer"
+                            }`}
+                          >
+                            <Checkbox
+                              checked={form.selectedKitIds.includes(kit.id)}
+                              onCheckedChange={() => toggleKit(kit.id)}
+                              disabled={isUnavailable}
+                            />
+                            {isUnavailable ? (
+                              <Lock className="h-3.5 w-3.5 text-amber-500" />
+                            ) : (
+                              <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
+                            )}
+                            <span className={`text-sm ${isUnavailable ? "line-through" : ""}`}>
+                              {kit.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground ml-auto">
+                              {kit.items?.length || 0} itens
+                            </span>
+                            {isUnavailable && (
+                              <Badge variant="outline" className="text-[10px] ml-1 border-amber-300 text-amber-600 px-1.5 py-0">
+                                Indisponível
+                              </Badge>
+                            )}
+                          </label>
+                        </TooltipTrigger>
+                        {isUnavailable && (
+                          <TooltipContent side="left">
+                            <p className="text-xs">
+                              Kit indisponível: contém itens já reservados no período selecionado
+                            </p>
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
+                    );
+                  })
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-3">
                     Nenhum kit disponível

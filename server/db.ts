@@ -641,6 +641,105 @@ export async function getKitItemIds(kitIds: number[]): Promise<number[]> {
   return rows.map((r) => r.itemId);
 }
 
+// ─── Availability Check (Shared Kit Resolution) ────────────────────────────
+// Given a date range, returns which items and kits are available or unavailable.
+// If a physical item is reserved (directly or via any kit), ALL kits containing
+// that item are marked unavailable for that period.
+export async function checkAvailability(
+  startDate: number,
+  endDate: number,
+  excludeReservationId?: number
+): Promise<{
+  unavailableItemIds: number[];
+  unavailableKitIds: number[];
+  conflicts: Array<{ itemId: number; itemName: string | null; itemCode: string | null; reservationId: number; viaKitId: number | null; viaKitName: string | null }>;
+}> {
+  const db = await getDb();
+  if (!db) return { unavailableItemIds: [], unavailableKitIds: [], conflicts: [] };
+
+  // Step 1: Find all reservation_items in active/pending reservations overlapping the period
+  const overlapConditions = [
+    lte(reservations.startDate, endDate),
+    gte(reservations.endDate, startDate),
+    or(eq(reservations.status, "pendente"), eq(reservations.status, "ativa")),
+  ];
+  if (excludeReservationId) {
+    overlapConditions.push(ne(reservations.id, excludeReservationId));
+  }
+
+  const overlappingResItems = await db
+    .select({
+      reservationId: reservations.id,
+      itemId: reservationItems.itemId,
+      kitId: reservationItems.kitId,
+      itemName: items.name,
+      itemCode: items.code,
+      kitName: kits.name,
+    })
+    .from(reservationItems)
+    .innerJoin(reservations, eq(reservationItems.reservationId, reservations.id))
+    .leftJoin(items, eq(reservationItems.itemId, items.id))
+    .leftJoin(kits, eq(reservationItems.kitId, kits.id))
+    .where(and(...overlapConditions));
+
+  // Step 2: Collect all directly reserved item IDs
+  const directItemIds = new Set<number>();
+  for (const ri of overlappingResItems) {
+    if (ri.itemId) directItemIds.add(ri.itemId);
+  }
+
+  // Step 3: Expand reserved kits to their physical items
+  const reservedKitIds = overlappingResItems
+    .filter((ri) => ri.kitId !== null)
+    .map((ri) => ri.kitId as number);
+  
+  let kitExpandedItemIds = new Set<number>();
+  if (reservedKitIds.length > 0) {
+    const kitItemRows = await db
+      .select({ kitId: kitItems.kitId, itemId: kitItems.itemId })
+      .from(kitItems)
+      .where(inArray(kitItems.kitId, reservedKitIds));
+    for (const ki of kitItemRows) {
+      kitExpandedItemIds.add(ki.itemId);
+    }
+  }
+
+  // Step 4: Union of all unavailable item IDs
+  const allUnavailableItemIds = new Set(Array.from(directItemIds).concat(Array.from(kitExpandedItemIds)));
+
+  // Step 5: Find ALL kits that contain any unavailable item (shared kit resolution)
+  const unavailableKitIds = new Set<number>();
+  if (allUnavailableItemIds.size > 0) {
+    const affectedKitRows = await db
+      .select({ kitId: kitItems.kitId })
+      .from(kitItems)
+      .where(inArray(kitItems.itemId, Array.from(allUnavailableItemIds)));
+    for (const row of affectedKitRows) {
+      unavailableKitIds.add(row.kitId);
+    }
+  }
+  // Also add directly reserved kits
+  for (const kid of reservedKitIds) {
+    unavailableKitIds.add(kid);
+  }
+
+  // Step 6: Build conflict details for UI
+  const conflicts = overlappingResItems.map((ri) => ({
+    itemId: ri.itemId ?? 0,
+    itemName: ri.itemName,
+    itemCode: ri.itemCode,
+    reservationId: ri.reservationId,
+    viaKitId: ri.kitId,
+    viaKitName: ri.kitName,
+  }));
+
+  return {
+    unavailableItemIds: Array.from(allUnavailableItemIds),
+    unavailableKitIds: Array.from(unavailableKitIds),
+    conflicts,
+  };
+}
+
 // ─── User reservation history ───────────────────────────────────────────────
 export async function getUserReservationHistory(userId: number) {
   const db = await getDb();
