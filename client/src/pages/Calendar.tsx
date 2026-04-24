@@ -249,9 +249,9 @@ export default function Calendar() {
                           <div
                             key={r.id}
                             className={`text-[10px] px-1.5 py-0.5 rounded truncate text-white font-medium ${statusColors[r.status]}`}
-                            title={`${r.clientName || "Sem cliente"} - ${statusLabels[r.status]}`}
+                            title={`${r.userName || "Colaborador"} - ${statusLabels[r.status]}`}
                           >
-                            {r.clientName || "Reserva"}
+                            {r.userName || "Reserva"}
                           </div>
                         ))}
                         {dayReservations.length > 3 && (
@@ -295,7 +295,7 @@ export default function Calendar() {
                               className={`w-2 h-2 rounded-full mb-1 ${statusColors[r.status]}`}
                             />
                             <p className="text-xs font-medium truncate">
-                              {r.clientName || "Reserva"}
+                              {r.userName || "Reserva"}
                             </p>
                             <p className="text-[10px] text-muted-foreground">
                               {statusLabels[r.status]}
@@ -341,7 +341,7 @@ export default function Calendar() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium">
-                          {r.clientName || "Sem cliente"}
+                          {r.userName || "Colaborador"}
                         </h3>
                         <Badge
                           variant="secondary"

@@ -43,6 +43,8 @@ import {
   Boxes,
   X,
   Eye,
+  User,
+  Building2,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { useSearch } from "wouter";
@@ -64,7 +66,6 @@ const statusColors: Record<string, string> = {
 };
 
 type ReservationForm = {
-  clientId: number | undefined;
   startDate: string;
   endDate: string;
   notes: string;
@@ -73,7 +74,6 @@ type ReservationForm = {
 };
 
 const emptyForm: ReservationForm = {
-  clientId: undefined,
   startDate: "",
   endDate: "",
   notes: "",
@@ -107,7 +107,6 @@ export default function Reservations() {
         setForm({ ...emptyForm, startDate: dateStr, endDate: endStr });
         setDialogOpen(true);
       }
-      // Clean URL
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
@@ -115,7 +114,6 @@ export default function Reservations() {
   const { data: reservations, isLoading } = trpc.reservation.list.useQuery({
     status: statusFilter !== "all" ? statusFilter : undefined,
   });
-  const { data: clients } = trpc.customer.list.useQuery();
   const { data: items } = trpc.item.list.useQuery();
   const { data: kits } = trpc.kit.list.useQuery();
   const { data: detail } = trpc.reservation.getById.useQuery(
@@ -162,7 +160,6 @@ export default function Reservations() {
       return;
     }
     createMutation.mutate({
-      clientId: form.clientId,
       startDate,
       endDate,
       notes: form.notes || undefined,
@@ -195,7 +192,8 @@ export default function Reservations() {
     const s = search.toLowerCase();
     return reservations.filter(
       (r) =>
-        r.clientName?.toLowerCase().includes(s) ||
+        r.userName?.toLowerCase().includes(s) ||
+        r.userDepartment?.toLowerCase().includes(s) ||
         r.notes?.toLowerCase().includes(s) ||
         r.reservationItems?.some(
           (ri: any) =>
@@ -231,7 +229,7 @@ export default function Reservations() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar reservas..."
+            placeholder="Buscar por colaborador, departamento, itens..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -279,9 +277,16 @@ export default function Reservations() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-medium">
-                        {r.clientName || "Sem cliente"}
+                      <h3 className="font-medium flex items-center gap-1.5">
+                        <User className="h-3.5 w-3.5 text-muted-foreground" />
+                        {r.userName || "Colaborador"}
                       </h3>
+                      {r.userDepartment && (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Building2 className="h-3 w-3" />
+                          {r.userDepartment}
+                        </span>
+                      )}
                       <Badge
                         variant="secondary"
                         className={`text-xs ${statusColors[r.status]}`}
@@ -369,29 +374,13 @@ export default function Reservations() {
             <DialogTitle>Nova Reserva</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Cliente</Label>
-              <Select
-                value={form.clientId ? String(form.clientId) : "none"}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    clientId: v === "none" ? undefined : Number(v),
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um cliente" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sem cliente</SelectItem>
-                  {clients?.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Info: reserva será vinculada ao colaborador logado */}
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border">
+              <User className="h-4 w-4 text-primary shrink-0" />
+              <div className="text-sm">
+                <span className="text-muted-foreground">Solicitante: </span>
+                <span className="font-medium">{user?.name || user?.email || "Você"}</span>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -418,7 +407,7 @@ export default function Reservations() {
             <div className="space-y-2">
               <Label>Itens</Label>
               <div className="border rounded-lg max-h-40 overflow-y-auto">
-                {items && items.length > 0 ? (
+                {items && items.filter((item) => item.status === "disponivel").length > 0 ? (
                   items
                     .filter((item) => item.status === "disponivel")
                     .map((item) => (
@@ -449,7 +438,7 @@ export default function Reservations() {
             <div className="space-y-2">
               <Label>Kits</Label>
               <div className="border rounded-lg max-h-40 overflow-y-auto">
-                {kits && kits.length > 0 ? (
+                {kits && kits.filter((kit) => kit.status === "completo").length > 0 ? (
                   kits
                     .filter((kit) => kit.status === "completo")
                     .map((kit) => (
@@ -521,17 +510,17 @@ export default function Reservations() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-muted-foreground text-xs mb-0.5">
-                    Cliente
+                    Colaborador
                   </p>
                   <p className="font-medium">
-                    {detail.clientName || "Sem cliente"}
+                    {detail.userName || "—"}
                   </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs mb-0.5">
-                    Criado por
+                    Departamento
                   </p>
-                  <p className="font-medium">{detail.userName || "—"}</p>
+                  <p className="font-medium">{detail.userDepartment || "—"}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs mb-0.5">Início</p>

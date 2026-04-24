@@ -7,13 +7,11 @@ import {
   items,
   kits,
   kitItems,
-  clients,
   reservations,
   reservationItems,
   type InsertCategory,
   type InsertItem,
   type InsertKit,
-  type InsertClient,
   type InsertReservation,
   type InsertReservationItem,
 } from "../drizzle/schema";
@@ -33,7 +31,7 @@ export async function getDb() {
   return _db;
 }
 
-// ─── Users ───────────────────────────────────────────────────────────────────
+// ─── Users (Colaboradores) ──────────────────────────────────────────────────
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
@@ -65,6 +63,45 @@ export async function getUserByOpenId(openId: string) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function listUsers(search?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  if (search) {
+    return db
+      .select()
+      .from(users)
+      .where(
+        or(
+          like(users.name, `%${search}%`),
+          like(users.email, `%${search}%`),
+          like(users.department, `%${search}%`),
+          like(users.phone, `%${search}%`)
+        )
+      )
+      .orderBy(asc(users.name));
+  }
+  return db.select().from(users).orderBy(asc(users.name));
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return rows[0] || undefined;
+}
+
+export async function updateUserProfile(id: number, data: { phone?: string | null; extension?: string | null; department?: string | null }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(users).set(data).where(eq(users.id, id));
+}
+
+export async function updateUserRole(id: number, role: "user" | "admin") {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(users).set({ role }).where(eq(users.id, id));
 }
 
 // ─── Categories ──────────────────────────────────────────────────────────────
@@ -264,50 +301,10 @@ export async function recalculateKitStatus(kitId: number) {
   await db.update(kits).set({ status: hasUnavailable ? "incompleto" : "completo" }).where(eq(kits.id, kitId));
 }
 
-// ─── Clients ─────────────────────────────────────────────────────────────────
-export async function listClients(search?: string) {
-  const db = await getDb();
-  if (!db) return [];
-  if (search) {
-    return db
-      .select()
-      .from(clients)
-      .where(or(like(clients.name, `%${search}%`), like(clients.email, `%${search}%`), like(clients.phone, `%${search}%`), like(clients.company, `%${search}%`)))
-      .orderBy(asc(clients.name));
-  }
-  return db.select().from(clients).orderBy(asc(clients.name));
-}
-
-export async function getClientById(id: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-  const rows = await db.select().from(clients).where(eq(clients.id, id)).limit(1);
-  return rows[0] || undefined;
-}
-
-export async function createClient(data: InsertClient) {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
-  const result = await db.insert(clients).values(data);
-  return { id: result[0].insertId };
-}
-
-export async function updateClient(id: number, data: Partial<InsertClient>) {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
-  await db.update(clients).set(data).where(eq(clients.id, id));
-}
-
-export async function deleteClient(id: number) {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
-  await db.delete(clients).where(eq(clients.id, id));
-}
-
 // ─── Reservations ────────────────────────────────────────────────────────────
 export async function listReservations(filters?: {
   status?: string;
-  clientId?: number;
+  userId?: number;
   search?: string;
   startDate?: number;
   endDate?: number;
@@ -316,7 +313,7 @@ export async function listReservations(filters?: {
   if (!db) return [];
   const conditions = [];
   if (filters?.status) conditions.push(eq(reservations.status, filters.status as any));
-  if (filters?.clientId) conditions.push(eq(reservations.clientId, filters.clientId));
+  if (filters?.userId) conditions.push(eq(reservations.userId, filters.userId));
   if (filters?.startDate) conditions.push(gte(reservations.endDate, filters.startDate));
   if (filters?.endDate) conditions.push(lte(reservations.startDate, filters.endDate));
 
@@ -325,8 +322,8 @@ export async function listReservations(filters?: {
       id: reservations.id,
       userId: reservations.userId,
       userName: users.name,
-      clientId: reservations.clientId,
-      clientName: clients.name,
+      userEmail: users.email,
+      userDepartment: users.department,
       startDate: reservations.startDate,
       endDate: reservations.endDate,
       status: reservations.status,
@@ -340,7 +337,6 @@ export async function listReservations(filters?: {
     })
     .from(reservations)
     .leftJoin(users, eq(reservations.userId, users.id))
-    .leftJoin(clients, eq(reservations.clientId, clients.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(reservations.startDate));
 
@@ -376,8 +372,8 @@ export async function getReservationById(id: number) {
       id: reservations.id,
       userId: reservations.userId,
       userName: users.name,
-      clientId: reservations.clientId,
-      clientName: clients.name,
+      userEmail: users.email,
+      userDepartment: users.department,
       startDate: reservations.startDate,
       endDate: reservations.endDate,
       status: reservations.status,
@@ -391,7 +387,6 @@ export async function getReservationById(id: number) {
     })
     .from(reservations)
     .leftJoin(users, eq(reservations.userId, users.id))
-    .leftJoin(clients, eq(reservations.clientId, clients.id))
     .where(eq(reservations.id, id))
     .limit(1);
   if (!rows[0]) return undefined;
@@ -488,7 +483,6 @@ export async function checkKitConflicts(
   if (!db) return [];
   if (kitIds.length === 0) return [];
 
-  // Check kit-level conflicts
   const kitConditions = [
     inArray(reservationItems.kitId, kitIds),
     lte(reservations.startDate, endDate),
@@ -513,7 +507,6 @@ export async function checkKitConflicts(
     .leftJoin(kits, eq(reservationItems.kitId, kits.id))
     .where(and(...kitConditions));
 
-  // Also check if individual items in the kits are booked
   const kitItemIds = await db
     .select({ itemId: kitItems.itemId })
     .from(kitItems)
@@ -531,7 +524,7 @@ export async function checkKitConflicts(
 // ─── Dashboard Stats ─────────────────────────────────────────────────────────
 export async function getDashboardStats() {
   const db = await getDb();
-  if (!db) return { totalItems: 0, availableItems: 0, lentItems: 0, maintenanceItems: 0, totalKits: 0, totalClients: 0, activeReservations: 0, pendingReservations: 0, overdueReservations: 0 };
+  if (!db) return { totalItems: 0, availableItems: 0, lentItems: 0, maintenanceItems: 0, totalKits: 0, totalUsers: 0, activeReservations: 0, pendingReservations: 0, overdueReservations: 0 };
 
   const now = Date.now();
 
@@ -545,7 +538,7 @@ export async function getDashboardStats() {
     .from(items);
 
   const [kitStats] = await db.select({ total: count() }).from(kits);
-  const [clientStats] = await db.select({ total: count() }).from(clients);
+  const [userStats] = await db.select({ total: count() }).from(users);
 
   const [activeRes] = await db
     .select({ total: count() })
@@ -568,7 +561,7 @@ export async function getDashboardStats() {
     lentItems: Number(itemStats?.lent ?? 0),
     maintenanceItems: Number(itemStats?.maintenance ?? 0),
     totalKits: kitStats?.total ?? 0,
-    totalClients: clientStats?.total ?? 0,
+    totalUsers: userStats?.total ?? 0,
     activeReservations: activeRes?.total ?? 0,
     pendingReservations: pendingRes?.total ?? 0,
     overdueReservations: overdueRes?.total ?? 0,
@@ -581,14 +574,15 @@ export async function getRecentReservations(limit = 10) {
   return db
     .select({
       id: reservations.id,
-      clientName: clients.name,
+      userName: users.name,
+      userDepartment: users.department,
       startDate: reservations.startDate,
       endDate: reservations.endDate,
       status: reservations.status,
       notes: reservations.notes,
     })
     .from(reservations)
-    .leftJoin(clients, eq(reservations.clientId, clients.id))
+    .leftJoin(users, eq(reservations.userId, users.id))
     .orderBy(desc(reservations.createdAt))
     .limit(limit);
 }
@@ -600,14 +594,13 @@ export async function getOverdueReservations() {
   return db
     .select({
       id: reservations.id,
-      clientName: clients.name,
       userName: users.name,
+      userDepartment: users.department,
       startDate: reservations.startDate,
       endDate: reservations.endDate,
       status: reservations.status,
     })
     .from(reservations)
-    .leftJoin(clients, eq(reservations.clientId, clients.id))
     .leftJoin(users, eq(reservations.userId, users.id))
     .where(and(eq(reservations.status, "ativa"), lte(reservations.endDate, now)))
     .orderBy(asc(reservations.endDate));
@@ -623,4 +616,23 @@ export async function getKitItemIds(kitIds: number[]): Promise<number[]> {
     .from(kitItems)
     .where(inArray(kitItems.kitId, kitIds));
   return rows.map((r) => r.itemId);
+}
+
+// ─── User reservation history ───────────────────────────────────────────────
+export async function getUserReservationHistory(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: reservations.id,
+      startDate: reservations.startDate,
+      endDate: reservations.endDate,
+      status: reservations.status,
+      notes: reservations.notes,
+      createdAt: reservations.createdAt,
+    })
+    .from(reservations)
+    .where(eq(reservations.userId, userId))
+    .orderBy(desc(reservations.createdAt));
+  return rows;
 }

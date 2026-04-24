@@ -8,7 +8,7 @@ import DashboardLayout from "./components/DashboardLayout";
 import Home from "./pages/Home";
 import Items from "./pages/Items";
 import Kits from "./pages/Kits";
-import Clients from "./pages/Clients";
+import Team from "./pages/Team";
 import Calendar from "./pages/Calendar";
 import Reservations from "./pages/Reservations";
 import CheckInOut from "./pages/CheckInOut";
@@ -20,7 +20,7 @@ function Router() {
         <Route path="/" component={Home} />
         <Route path="/items" component={Items} />
         <Route path="/kits" component={Kits} />
-        <Route path="/clients" component={Clients} />
+        <Route path="/team" component={Team} />
         <Route path="/calendar" component={Calendar} />
         <Route path="/reservations" component={Reservations} />
         <Route path="/checkinout" component={CheckInOut} />

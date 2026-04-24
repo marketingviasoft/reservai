@@ -143,8 +143,8 @@ export default function Home() {
             icon={Boxes}
           />
           <StatCard
-            title="Clientes"
-            value={stats?.totalClients ?? 0}
+            title="Colaboradores"
+            value={stats?.totalUsers ?? 0}
             icon={Users}
           />
           <StatCard
@@ -179,13 +179,13 @@ export default function Home() {
           <span className="text-sm font-medium">Inventário</span>
         </button>
         <button
-          onClick={() => setLocation("/clients")}
+          onClick={() => setLocation("/team")}
           className="flex items-center gap-3 p-3.5 rounded-xl bg-card hover:bg-accent/50 transition-colors border border-border/50 shadow-sm"
         >
           <div className="h-9 w-9 rounded-lg bg-emerald-50 flex items-center justify-center">
             <Users className="h-4 w-4 text-emerald-600" />
           </div>
-          <span className="text-sm font-medium">Clientes</span>
+          <span className="text-sm font-medium">Colaboradores</span>
         </button>
         <button
           onClick={() => setLocation("/checkinout")}
@@ -224,7 +224,7 @@ export default function Home() {
                   >
                     <div>
                       <p className="text-sm font-medium text-foreground">
-                        {r.clientName || "Sem cliente"}
+                        {r.userName || "Colaborador"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Venceu em{" "}
@@ -287,7 +287,7 @@ export default function Home() {
                       </div>
                       <div>
                         <p className="text-sm font-medium">
-                          {r.clientName || "Sem cliente"}
+                          {r.userName || "Colaborador"}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {format(new Date(r.startDate), "dd/MM", {

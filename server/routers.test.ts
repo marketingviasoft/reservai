@@ -16,6 +16,9 @@ function createMockUser(overrides?: Partial<AuthenticatedUser>): AuthenticatedUs
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
+    phone: null,
+    extension: null,
+    department: null,
     ...overrides,
   };
 }
@@ -127,23 +130,46 @@ describe("kit router - access control", () => {
   });
 });
 
-describe("customer router - access control", () => {
-  it("rejects non-admin from creating clients", async () => {
-    const user = createMockUser({ role: "user" });
+describe("profile router - access control", () => {
+  it("rejects unauthenticated user from listing profiles", async () => {
+    const ctx = createContext(null);
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.profile.list()).rejects.toThrow();
+  });
+
+  it("rejects non-admin from updating other user profiles", async () => {
+    const user = createMockUser({ role: "user", id: 2 });
     const ctx = createContext(user);
     const caller = appRouter.createCaller(ctx);
     await expect(
-      caller.customer.create({ name: "Test Client" })
+      caller.profile.updateProfile({ id: 1, phone: "123" })
     ).rejects.toThrow();
   });
 
-  it("rejects non-admin from deleting clients", async () => {
+  it("rejects non-admin from changing user roles", async () => {
     const user = createMockUser({ role: "user" });
     const ctx = createContext(user);
     const caller = appRouter.createCaller(ctx);
     await expect(
-      caller.customer.delete({ id: 1 })
+      caller.profile.updateRole({ id: 2, role: "admin" })
     ).rejects.toThrow();
+  });
+
+  it("allows regular user to update own profile", async () => {
+    const user = createMockUser({ role: "user" });
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+    // This should not fail at auth level - will fail at DB level
+    try {
+      await caller.profile.updateMyProfile({
+        phone: "11999999999",
+        department: "Marketing",
+      });
+    } catch (e: any) {
+      // Should fail at DB level, not auth level
+      expect(e.message).not.toContain("FORBIDDEN");
+      expect(e.message).not.toContain("UNAUTHORIZED");
+    }
   });
 });
 
@@ -173,8 +199,7 @@ describe("reservation router - input validation", () => {
 });
 
 describe("reservation router - access control", () => {
-  it("allows regular user to create reservations", async () => {
-    // Regular users should be able to create reservations (protectedProcedure, not adminProcedure)
+  it("allows regular user to create reservations (tied to their userId)", async () => {
     const user = createMockUser({ role: "user" });
     const ctx = createContext(user);
     const caller = appRouter.createCaller(ctx);

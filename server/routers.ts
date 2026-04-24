@@ -112,46 +112,42 @@ const kitRouter = router({
     .mutation(({ input }) => db.deleteKit(input.id)),
 });
 
-// ─── Client Router ───────────────────────────────────────────────────────────
-const clientRouter = router({
+// ─── Profile Router (Colaboradores) ─────────────────────────────────────────
+const profileRouter = router({
   list: protectedProcedure
     .input(z.object({ search: z.string().optional() }).optional())
-    .query(({ input }) => db.listClients(input?.search)),
+    .query(({ input }) => db.listUsers(input?.search)),
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(({ input }) => db.getClientById(input.id)),
-  create: adminProcedure
+    .query(({ input }) => db.getUserById(input.id)),
+  // Colaborador atualiza seu próprio perfil
+  updateMyProfile: protectedProcedure
     .input(z.object({
-      name: z.string().min(1),
-      email: z.string().optional(),
-      phone: z.string().optional(),
-      company: z.string().optional(),
-      document: z.string().optional(),
-      address: z.string().optional(),
-      notes: z.string().optional(),
+      phone: z.string().nullable().optional(),
+      extension: z.string().nullable().optional(),
+      department: z.string().nullable().optional(),
     }))
-    .mutation(({ input }) => db.createClient(input)),
-  update: adminProcedure
+    .mutation(({ ctx, input }) => db.updateUserProfile(ctx.user.id, input)),
+  // Admin atualiza perfil de qualquer colaborador
+  updateProfile: adminProcedure
     .input(z.object({
       id: z.number(),
-      name: z.string().min(1).optional(),
-      email: z.string().optional(),
-      phone: z.string().optional(),
-      company: z.string().optional(),
-      document: z.string().optional(),
-      address: z.string().optional(),
-      notes: z.string().optional(),
+      phone: z.string().nullable().optional(),
+      extension: z.string().nullable().optional(),
+      department: z.string().nullable().optional(),
     }))
     .mutation(({ input }) => {
       const { id, ...data } = input;
-      return db.updateClient(id, data);
+      return db.updateUserProfile(id, data);
     }),
-  delete: adminProcedure
-    .input(z.object({ id: z.number() }))
-    .mutation(({ input }) => db.deleteClient(input.id)),
+  // Admin altera role
+  updateRole: adminProcedure
+    .input(z.object({ id: z.number(), role: z.enum(["user", "admin"]) }))
+    .mutation(({ input }) => db.updateUserRole(input.id, input.role)),
+  // Histórico de reservas de um colaborador
   reservations: protectedProcedure
-    .input(z.object({ clientId: z.number() }))
-    .query(({ input }) => db.listReservations({ clientId: input.clientId })),
+    .input(z.object({ userId: z.number() }))
+    .query(({ input }) => db.getUserReservationHistory(input.userId)),
 });
 
 // ─── Reservation Router ──────────────────────────────────────────────────────
@@ -159,7 +155,7 @@ const reservationRouter = router({
   list: protectedProcedure
     .input(z.object({
       status: z.string().optional(),
-      clientId: z.number().optional(),
+      userId: z.number().optional(),
       search: z.string().optional(),
       startDate: z.number().optional(),
       endDate: z.number().optional(),
@@ -170,7 +166,6 @@ const reservationRouter = router({
     .query(({ input }) => db.getReservationById(input.id)),
   create: protectedProcedure
     .input(z.object({
-      clientId: z.number().optional(),
       startDate: z.number(),
       endDate: z.number(),
       notes: z.string().optional(),
@@ -192,7 +187,6 @@ const reservationRouter = router({
         if (kitConflicts.length > 0) {
           throw new Error(`Conflito de reserva para kits ou itens vinculados a kits`);
         }
-        // Also check individual items in kits
         const kitItemIds = await db.getKitItemIds(input.kitIds);
         if (kitItemIds.length > 0) {
           const itemConflicts = await db.checkItemConflicts(kitItemIds, input.startDate, input.endDate);
@@ -202,8 +196,9 @@ const reservationRouter = router({
           }
         }
       }
+      // Reserva é atrelada ao colaborador logado (ctx.user.id)
       return db.createReservation(
-        { userId: ctx.user.id, clientId: input.clientId ?? null, startDate: input.startDate, endDate: input.endDate, notes: input.notes, status: "pendente" },
+        { userId: ctx.user.id, startDate: input.startDate, endDate: input.endDate, notes: input.notes, status: "pendente" },
         input.itemIds,
         input.kitIds
       );
@@ -211,7 +206,6 @@ const reservationRouter = router({
   update: protectedProcedure
     .input(z.object({
       id: z.number(),
-      clientId: z.number().nullable().optional(),
       startDate: z.number().optional(),
       endDate: z.number().optional(),
       status: z.enum(["pendente", "ativa", "concluida", "cancelada"]).optional(),
@@ -224,11 +218,9 @@ const reservationRouter = router({
   cancel: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
-      // Get reservation items to release them
       const reservation = await db.getReservationById(input.id);
       if (!reservation) throw new Error("Reserva não encontrada");
       await db.updateReservation(input.id, { status: "cancelada" });
-      // If items were checked out, set them back to available
       if (reservation.status === "ativa") {
         for (const ri of reservation.reservationItems) {
           if (ri.itemId) await db.updateItem(ri.itemId, { status: "disponivel" });
@@ -241,13 +233,11 @@ const reservationRouter = router({
       const reservation = await db.getReservationById(input.id);
       if (!reservation) throw new Error("Reserva não encontrada");
       if (reservation.status !== "pendente") throw new Error("Apenas reservas pendentes podem ter check-out");
-      // Update reservation status
       await db.updateReservation(input.id, {
         status: "ativa",
         checkoutAt: Date.now(),
         checkoutByUserId: ctx.user.id,
       });
-      // Update item statuses to "emprestado"
       for (const ri of reservation.reservationItems) {
         if (ri.itemId) {
           await db.updateItem(ri.itemId, { status: "emprestado" });
@@ -266,13 +256,11 @@ const reservationRouter = router({
       const reservation = await db.getReservationById(input.id);
       if (!reservation) throw new Error("Reserva não encontrada");
       if (reservation.status !== "ativa") throw new Error("Apenas reservas ativas podem ter check-in");
-      // Update reservation status
       await db.updateReservation(input.id, {
         status: "concluida",
         checkinAt: Date.now(),
         checkinByUserId: ctx.user.id,
       });
-      // Update item statuses back to "disponivel"
       for (const ri of reservation.reservationItems) {
         if (ri.itemId) {
           await db.updateItem(ri.itemId, { status: "disponivel" });
@@ -331,7 +319,7 @@ export const appRouter = router({
   category: categoryRouter,
   item: itemRouter,
   kit: kitRouter,
-  customer: clientRouter,
+  profile: profileRouter,
   reservation: reservationRouter,
   dashboard: dashboardRouter,
 });

@@ -10,7 +10,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
-// ─── Users ───────────────────────────────────────────────────────────────────
+// ─── Users (Colaboradores) ──────────────────────────────────────────────────
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
   openId: varchar("openId", { length: 64 }).notNull().unique(),
@@ -18,6 +18,10 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  // Campos complementares do colaborador
+  phone: varchar("phone", { length: 32 }),
+  extension: varchar("extension", { length: 16 }), // ramal
+  department: varchar("department", { length: 128 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -98,30 +102,13 @@ export const kitItems = mysqlTable("kit_items", {
 export type KitItem = typeof kitItems.$inferSelect;
 export type InsertKitItem = typeof kitItems.$inferInsert;
 
-// ─── Clients (Clientes) ─────────────────────────────────────────────────────
-export const clients = mysqlTable("clients", {
-  id: int("id").autoincrement().primaryKey(),
-  name: varchar("name", { length: 256 }).notNull(),
-  email: varchar("email", { length: 320 }),
-  phone: varchar("phone", { length: 32 }),
-  company: varchar("company", { length: 256 }),
-  document: varchar("document", { length: 32 }),
-  address: text("address"),
-  notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
-
-export type Client = typeof clients.$inferSelect;
-export type InsertClient = typeof clients.$inferInsert;
-
 // ─── Reservations (Reservas) ─────────────────────────────────────────────────
+// Reservas são atreladas diretamente ao colaborador (userId) que solicita
 export const reservations = mysqlTable("reservations", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId")
     .notNull()
     .references(() => users.id),
-  clientId: int("clientId").references(() => clients.id),
   startDate: bigint("startDate", { mode: "number" }).notNull(), // UTC ms
   endDate: bigint("endDate", { mode: "number" }).notNull(), // UTC ms
   status: mysqlEnum("status", ["pendente", "ativa", "concluida", "cancelada"])
@@ -174,18 +161,17 @@ export const reservationsRelations = relations(reservations, ({ one, many }) => 
   user: one(users, {
     fields: [reservations.userId],
     references: [users.id],
-  }),
-  client: one(clients, {
-    fields: [reservations.clientId],
-    references: [clients.id],
+    relationName: "reservationUser",
   }),
   checkoutByUser: one(users, {
     fields: [reservations.checkoutByUserId],
     references: [users.id],
+    relationName: "checkoutUser",
   }),
   checkinByUser: one(users, {
     fields: [reservations.checkinByUserId],
     references: [users.id],
+    relationName: "checkinUser",
   }),
   reservationItems: many(reservationItems),
 }));
@@ -208,10 +194,6 @@ export const reservationItemsRelations = relations(
   })
 );
 
-export const clientsRelations = relations(clients, ({ many }) => ({
-  reservations: many(reservations),
-}));
-
 export const usersRelations = relations(users, ({ many }) => ({
-  reservations: many(reservations),
+  reservations: many(reservations, { relationName: "reservationUser" }),
 }));
