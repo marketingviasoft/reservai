@@ -100,7 +100,7 @@ export default function CheckInOut() {
                     <User className="h-4 w-4 text-primary/60" />
                   </div>
                   <h3 className="font-medium">
-                    {reservation.userName || "Colaborador"}
+                    {reservation.userName || "Membro"}
                   </h3>
                 </div>
                 {isOverdue && (
@@ -143,7 +143,7 @@ export default function CheckInOut() {
                   setConfirmAction({
                     type,
                     id: reservation.id,
-                    userName: reservation.userName || "Colaborador",
+                    userName: reservation.userName || "Membro",
                   })
                 }
                 variant={type === "checkout" ? "default" : "outline"}
@@ -172,7 +172,7 @@ export default function CheckInOut() {
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
               </div>
               <span className="font-medium text-sm">
-                {reservation.userName || "Colaborador"}
+                {reservation.userName || "Membro"}
               </span>
               <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
                 Concluída
@@ -263,7 +263,7 @@ export default function CheckInOut() {
               <div>
                 <p className="text-sm font-medium text-blue-900">Saída de Equipamentos</p>
                 <p className="text-xs text-blue-700/70">
-                  Confirme a entrega dos equipamentos ao colaborador. Reservas pendentes aguardando check-out.
+                  Confirme a entrega dos equipamentos ao membro da equipe. Reservas pendentes aguardando check-out.
                 </p>
               </div>
             </CardContent>

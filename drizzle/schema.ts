@@ -10,7 +10,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
-// ─── Users (Colaboradores) ──────────────────────────────────────────────────
+// ─── Users (Equipe) ──────────────────────────────────────────────────
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
   openId: varchar("openId", { length: 64 }).notNull().unique(),
@@ -18,7 +18,7 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  // Campos complementares do colaborador
+  // Campos complementares do membro da equipe
   phone: varchar("phone", { length: 32 }),
   extension: varchar("extension", { length: 16 }), // ramal
   department: varchar("department", { length: 128 }),
@@ -103,7 +103,7 @@ export type KitItem = typeof kitItems.$inferSelect;
 export type InsertKitItem = typeof kitItems.$inferInsert;
 
 // ─── Reservations (Reservas) ─────────────────────────────────────────────────
-// Reservas são atreladas diretamente ao colaborador (userId) que solicita
+// Reservas são atreladas diretamente ao membro da equipe (userId) que solicita
 export const reservations = mysqlTable("reservations", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId")

@@ -249,7 +249,7 @@ export default function Calendar() {
                           <div
                             key={r.id}
                             className={`text-[10px] px-1.5 py-0.5 rounded truncate text-white font-medium ${statusColors[r.status]}`}
-                            title={`${r.userName || "Colaborador"} - ${statusLabels[r.status]}`}
+                            title={`${r.userName || "Membro"} - ${statusLabels[r.status]}`}
                           >
                             {r.userName || "Reserva"}
                           </div>
@@ -341,7 +341,7 @@ export default function Calendar() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium">
-                          {r.userName || "Colaborador"}
+                          {r.userName || "Membro"}
                         </h3>
                         <Badge
                           variant="secondary"

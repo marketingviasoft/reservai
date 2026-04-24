@@ -139,10 +139,10 @@ export default function Team() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Colaboradores
+            Equipe
           </h1>
           <p className="text-muted-foreground mt-0.5 text-sm">
-            Gerencie os perfis dos colaboradores e veja o histórico de reservas.
+            Gerencie os membros da equipe e veja o histórico de reservas.
           </p>
         </div>
       </div>
@@ -170,7 +170,7 @@ export default function Team() {
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Users className="h-12 w-12 text-muted-foreground/30 mb-3" />
             <p className="text-muted-foreground font-medium">
-              Nenhum colaborador encontrado
+              Nenhum membro encontrado
             </p>
           </CardContent>
         </Card>
@@ -196,7 +196,7 @@ export default function Team() {
                             className={`text-xs ${u.role === "admin" ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-600"}`}
                           >
                             <Shield className="h-3 w-3 mr-0.5" />
-                            {u.role === "admin" ? "Admin" : "Colaborador"}
+                            {u.role === "admin" ? "Admin" : "Membro"}
                           </Badge>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-muted-foreground">
@@ -252,7 +252,7 @@ export default function Team() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="user">Colaborador</SelectItem>
+                            <SelectItem value="user">Membro</SelectItem>
                             <SelectItem value="admin">Admin</SelectItem>
                           </SelectContent>
                         </Select>

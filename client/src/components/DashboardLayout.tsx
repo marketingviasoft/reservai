@@ -43,7 +43,7 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Package, label: "Inventário", path: "/items" },
   { icon: Boxes, label: "Kits", path: "/kits" },
-  { icon: Users, label: "Colaboradores", path: "/team" },
+  { icon: Users, label: "Equipe", path: "/team" },
   { icon: CalendarDays, label: "Calendário", path: "/calendar" },
   { icon: ClipboardList, label: "Reservas", path: "/reservations" },
   { icon: ArrowLeftRight, label: "Check-in/out", path: "/checkinout" },

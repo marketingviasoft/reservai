@@ -143,7 +143,7 @@ export default function Home() {
             icon={Boxes}
           />
           <StatCard
-            title="Colaboradores"
+            title="Equipe"
             value={stats?.totalUsers ?? 0}
             icon={Users}
           />
@@ -185,7 +185,7 @@ export default function Home() {
           <div className="h-9 w-9 rounded-lg bg-emerald-50 flex items-center justify-center">
             <Users className="h-4 w-4 text-emerald-600" />
           </div>
-          <span className="text-sm font-medium">Colaboradores</span>
+          <span className="text-sm font-medium">Equipe</span>
         </button>
         <button
           onClick={() => setLocation("/checkinout")}
@@ -224,7 +224,7 @@ export default function Home() {
                   >
                     <div>
                       <p className="text-sm font-medium text-foreground">
-                        {r.userName || "Colaborador"}
+                        {r.userName || "Membro"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Venceu em{" "}
@@ -287,7 +287,7 @@ export default function Home() {
                       </div>
                       <div>
                         <p className="text-sm font-medium">
-                          {r.userName || "Colaborador"}
+                          {r.userName || "Membro"}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {format(new Date(r.startDate), "dd/MM", {

@@ -229,7 +229,7 @@ export default function Reservations() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por colaborador, departamento, itens..."
+            placeholder="Buscar por membro, departamento, itens..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -279,7 +279,7 @@ export default function Reservations() {
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-medium flex items-center gap-1.5">
                         <User className="h-3.5 w-3.5 text-muted-foreground" />
-                        {r.userName || "Colaborador"}
+                        {r.userName || "Membro"}
                       </h3>
                       {r.userDepartment && (
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -374,7 +374,7 @@ export default function Reservations() {
             <DialogTitle>Nova Reserva</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            {/* Info: reserva será vinculada ao colaborador logado */}
+            {/* Info: reserva será vinculada ao membro da equipe logado */}
             <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border">
               <User className="h-4 w-4 text-primary shrink-0" />
               <div className="text-sm">
@@ -510,7 +510,7 @@ export default function Reservations() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-muted-foreground text-xs mb-0.5">
-                    Colaborador
+                    Membro da equipe
                   </p>
                   <p className="font-medium">
                     {detail.userName || "—"}

@@ -91,3 +91,11 @@
 - [x] Atualizar App.tsx: rota /clients → /team
 - [x] Atualizar testes: customer → profile
 - [x] Todos os 19 testes passando após refatoração
+
+## Renomear: Colaboradores → Equipe
+- [x] Sidebar: label "Colaboradores" → "Equipe"
+- [x] Dashboard Home: card e atalho "Colaboradores" → "Equipe"
+- [x] Tela Team.tsx: título e textos "Colaboradores" → "Equipe"
+- [x] CheckInOut.tsx: referência "colaborador" → "membro da equipe" onde aplicável
+- [x] Reservations.tsx: referência "colaborador" → "membro da equipe" onde aplicável
+- [x] Badge de role: "Colaborador" → "Membro"
