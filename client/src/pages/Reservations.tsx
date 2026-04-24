@@ -421,9 +421,9 @@ export default function Reservations() {
                         />
                         <Package className="h-3.5 w-3.5 text-muted-foreground" />
                         <span className="text-sm">{item.name}</span>
-                        {item.serialNumber && (
+                        {item.code && (
                           <span className="text-xs text-muted-foreground font-mono ml-auto">
-                            {item.serialNumber}
+                            {item.code}
                           </span>
                         )}
                       </label>

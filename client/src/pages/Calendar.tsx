@@ -367,7 +367,7 @@ export default function Calendar() {
                               variant="outline"
                               className="text-xs"
                             >
-                              {ri.itemName || ri.kitName || "Item"}
+                              {ri.itemCode ? `${ri.itemCode} ${ri.itemName}` : (ri.itemName || ri.kitName || "Item")}
                             </Badge>
                           ))}
                         </div>

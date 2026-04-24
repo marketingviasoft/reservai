@@ -48,6 +48,7 @@ export const items = mysqlTable(
   "items",
   {
     id: int("id").autoincrement().primaryKey(),
+    code: varchar("code", { length: 16 }).notNull().unique(), // EQP-XXXXX
     name: varchar("name", { length: 256 }).notNull(),
     description: text("description"),
     categoryId: int("categoryId").references(() => categories.id),

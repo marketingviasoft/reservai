@@ -16,6 +16,18 @@ import {
   type InsertReservationItem,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { nanoid } from "nanoid";
+
+// Generate unique equipment code: EQP-XXXXX (uppercase alphanumeric)
+function generateItemCode(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const id = nanoid(5);
+  const code = id
+    .split("")
+    .map((c) => chars[Math.abs(c.charCodeAt(0)) % chars.length])
+    .join("");
+  return `EQP-${code}`;
+}
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -137,16 +149,16 @@ export async function listItems(filters?: { categoryId?: number; status?: string
   const conditions = [];
   if (filters?.categoryId) conditions.push(eq(items.categoryId, filters.categoryId));
   if (filters?.status) conditions.push(eq(items.status, filters.status as any));
-  if (filters?.search) conditions.push(or(like(items.name, `%${filters.search}%`), like(items.serialNumber, `%${filters.search}%`)));
+  if (filters?.search) conditions.push(or(like(items.name, `%${filters.search}%`), like(items.code, `%${filters.search}%`)));
   const rows = await db
     .select({
       id: items.id,
+      code: items.code,
       name: items.name,
       description: items.description,
       categoryId: items.categoryId,
       categoryName: categories.name,
       categoryColor: categories.color,
-      serialNumber: items.serialNumber,
       photoUrl: items.photoUrl,
       photoKey: items.photoKey,
       status: items.status,
@@ -167,11 +179,11 @@ export async function getItemById(id: number) {
   const rows = await db
     .select({
       id: items.id,
+      code: items.code,
       name: items.name,
       description: items.description,
       categoryId: items.categoryId,
       categoryName: categories.name,
-      serialNumber: items.serialNumber,
       photoUrl: items.photoUrl,
       photoKey: items.photoKey,
       status: items.status,
@@ -186,11 +198,19 @@ export async function getItemById(id: number) {
   return rows[0] || undefined;
 }
 
-export async function createItem(data: InsertItem) {
+export async function createItem(data: Omit<InsertItem, "code">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(items).values(data);
-  return { id: result[0].insertId };
+  // Auto-generate unique EQP-XXXXX code
+  let code = generateItemCode();
+  // Retry if collision (extremely unlikely)
+  for (let i = 0; i < 5; i++) {
+    const existing = await db.select({ id: items.id }).from(items).where(eq(items.code, code)).limit(1);
+    if (existing.length === 0) break;
+    code = generateItemCode();
+  }
+  const result = await db.insert(items).values({ ...data, code });
+  return { id: result[0].insertId, code };
 }
 
 export async function updateItem(id: number, data: Partial<InsertItem>) {
@@ -215,6 +235,7 @@ export async function listKits() {
       kitId: kitItems.kitId,
       itemId: kitItems.itemId,
       itemName: items.name,
+      itemCode: items.code,
       itemStatus: items.status,
       itemPhotoUrl: items.photoUrl,
     })
@@ -236,9 +257,9 @@ export async function getKitById(id: number) {
       id: kitItems.id,
       itemId: kitItems.itemId,
       itemName: items.name,
+      itemCode: items.code,
       itemStatus: items.status,
       itemPhotoUrl: items.photoUrl,
-      itemSerialNumber: items.serialNumber,
       itemCategoryId: items.categoryId,
     })
     .from(kitItems)
@@ -350,6 +371,7 @@ export async function listReservations(filters?: {
         itemId: reservationItems.itemId,
         kitId: reservationItems.kitId,
         itemName: items.name,
+        itemCode: items.code,
         kitName: kits.name,
       })
       .from(reservationItems)
@@ -398,6 +420,7 @@ export async function getReservationById(id: number) {
       itemId: reservationItems.itemId,
       kitId: reservationItems.kitId,
       itemName: items.name,
+      itemCode: items.code,
       kitName: kits.name,
       itemStatus: items.status,
     })

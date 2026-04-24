@@ -114,3 +114,11 @@
 - [x] Manter campos: Nome, Foto, Descrição, Categoria
 - [x] Atualizar placeholder de busca (remover referência a nº de série)
 - [x] Remover campo serialNumber do grid de itens se exibido
+
+## ID complexo para equipamentos (EQP-XXXXX)
+- [x] Adicionar campo `code` (varchar) na tabela items do schema
+- [x] Gerar código EQP-XXXXX automaticamente ao criar item (nanoid alfanumérico 5 chars)
+- [x] Exibir código EQP no card de equipamento (substituir ID numérico)
+- [x] Exibir código EQP no dialog de edição
+- [x] Exibir código EQP em reservas, calendário e check-in/out onde itens aparecem
+- [x] Migrar banco de dados

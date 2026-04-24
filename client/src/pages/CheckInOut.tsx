@@ -125,7 +125,7 @@ export default function CheckInOut() {
                   {reservation.reservationItems.map((ri: any, idx: number) => (
                     <Badge key={idx} variant="outline" className="text-xs gap-1 font-normal">
                       {ri.itemName ? (
-                        <><Package className="h-3 w-3" />{ri.itemName}</>
+                        <><Package className="h-3 w-3" />{ri.itemCode && <span className="font-mono text-muted-foreground">{ri.itemCode}</span>}{ri.itemName}</>
                       ) : (
                         <><Boxes className="h-3 w-3" />{ri.kitName}</>
                       )}
@@ -202,7 +202,7 @@ export default function CheckInOut() {
                 {reservation.reservationItems.map((ri: any, idx: number) => (
                   <Badge key={idx} variant="outline" className="text-xs gap-1 font-normal">
                     {ri.itemName ? (
-                      <><Package className="h-3 w-3" />{ri.itemName}</>
+                      <><Package className="h-3 w-3" />{ri.itemCode && <span className="font-mono text-muted-foreground">{ri.itemCode}</span>}{ri.itemName}</>
                     ) : (
                       <><Boxes className="h-3 w-3" />{ri.kitName}</>
                     )}

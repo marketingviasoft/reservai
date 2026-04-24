@@ -324,9 +324,9 @@ export default function Kits() {
                       />
                       <div className="flex-1 min-w-0">
                         <span className="text-sm font-medium">{item.name}</span>
-                        {item.serialNumber && (
+                        {item.code && (
                           <span className="text-xs text-muted-foreground ml-2 font-mono">
-                            {item.serialNumber}
+                            {item.code}
                           </span>
                         )}
                       </div>

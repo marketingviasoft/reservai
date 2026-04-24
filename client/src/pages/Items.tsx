@@ -375,7 +375,7 @@ export default function Items() {
                           {item.name}
                         </h3>
                         <p className="text-[11px] text-muted-foreground/60 mt-0.5 font-mono">
-                          ID: {item.id}
+                          {item.code}
                         </p>
                       </div>
                       <Badge
@@ -446,8 +446,8 @@ export default function Items() {
             {editingId && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border">
                 <Hash className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">ID:</span>
-                <span className="text-xs font-mono font-medium">{editingId}</span>
+                <span className="text-xs text-muted-foreground">Código:</span>
+                <span className="text-xs font-mono font-medium">{(items || []).find(i => i.id === editingId)?.code || ''}</span>
               </div>
             )}
 
