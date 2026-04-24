@@ -106,3 +106,11 @@
 - [x] Tela Items.tsx: título e textos "Inventário" → "Equipamentos"
 - [x] DashboardLayout.tsx: descrição do sistema se houver referência
 - [x] Demais referências textuais em todo o frontend
+
+## Ajuste formulário de criação de item
+- [x] Remover campo "Nº de Série" do formulário
+- [x] Adicionar upload de foto diretamente no dialog de criação/edição
+- [x] Exibir ID automático (somente leitura) no formulário de edição
+- [x] Manter campos: Nome, Foto, Descrição, Categoria
+- [x] Atualizar placeholder de busca (remover referência a nº de série)
+- [x] Remover campo serialNumber do grid de itens se exibido

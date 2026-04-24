@@ -39,10 +39,12 @@ import {
   Pencil,
   Trash2,
   Upload,
+  ImagePlus,
   X,
   Filter,
+  Hash,
 } from "lucide-react";
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef } from "react";
 import CategoryManager from "@/components/CategoryManager";
 
 const statusLabels: Record<string, string> = {
@@ -63,18 +65,20 @@ type ItemForm = {
   name: string;
   description: string;
   categoryId: number | undefined;
-  serialNumber: string;
-  status: string;
-  notes: string;
+  photoPreview: string | null;
+  photoBase64: string | null;
+  photoFilename: string | null;
+  photoContentType: string | null;
 };
 
 const emptyForm: ItemForm = {
   name: "",
   description: "",
   categoryId: undefined,
-  serialNumber: "",
-  status: "disponivel",
-  notes: "",
+  photoPreview: null,
+  photoBase64: null,
+  photoFilename: null,
+  photoContentType: null,
 };
 
 export default function Items() {
@@ -89,6 +93,7 @@ export default function Items() {
   const [form, setForm] = useState<ItemForm>(emptyForm);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dialogFileInputRef = useRef<HTMLInputElement>(null);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
 
   const { data: items, isLoading } = trpc.item.list.useQuery({
@@ -99,24 +104,42 @@ export default function Items() {
   const { data: categories } = trpc.category.list.useQuery();
 
   const createMutation = trpc.item.create.useMutation({
-    onSuccess: () => {
+    onSuccess: (newItem: any) => {
+      // If there's a photo to upload after creation, do it
+      if (form.photoBase64 && form.photoFilename && form.photoContentType) {
+        uploadMutation.mutate({
+          itemId: newItem.id,
+          base64: form.photoBase64,
+          filename: form.photoFilename,
+          contentType: form.photoContentType,
+        });
+      }
       utils.item.list.invalidate();
       utils.dashboard.stats.invalidate();
       setDialogOpen(false);
       setForm(emptyForm);
-      toast.success("Item criado com sucesso");
+      toast.success("Equipamento criado com sucesso");
     },
     onError: (e) => toast.error(e.message),
   });
 
   const updateMutation = trpc.item.update.useMutation({
     onSuccess: () => {
+      // If there's a new photo to upload after update, do it
+      if (editingId && form.photoBase64 && form.photoFilename && form.photoContentType) {
+        uploadMutation.mutate({
+          itemId: editingId,
+          base64: form.photoBase64,
+          filename: form.photoFilename,
+          contentType: form.photoContentType,
+        });
+      }
       utils.item.list.invalidate();
       utils.dashboard.stats.invalidate();
       setDialogOpen(false);
       setEditingId(null);
       setForm(emptyForm);
-      toast.success("Item atualizado");
+      toast.success("Equipamento atualizado");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -126,7 +149,7 @@ export default function Items() {
       utils.item.list.invalidate();
       utils.dashboard.stats.invalidate();
       setDeleteId(null);
-      toast.success("Item removido");
+      toast.success("Equipamento removido");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -148,9 +171,6 @@ export default function Items() {
       name: form.name,
       description: form.description || undefined,
       categoryId: form.categoryId || undefined,
-      serialNumber: form.serialNumber || undefined,
-      status: form.status as any,
-      notes: form.notes || undefined,
     };
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...data });
@@ -165,9 +185,10 @@ export default function Items() {
       name: item.name,
       description: item.description || "",
       categoryId: item.categoryId || undefined,
-      serialNumber: item.serialNumber || "",
-      status: item.status,
-      notes: item.notes || "",
+      photoPreview: item.photoUrl || null,
+      photoBase64: null,
+      photoFilename: null,
+      photoContentType: null,
     });
     setDialogOpen(true);
   };
@@ -186,6 +207,26 @@ export default function Items() {
         filename: file.name,
         contentType: file.type,
       });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDialogPhotoSelect = (file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Arquivo muito grande (máx. 5MB)");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(",")[1];
+      setForm((prev) => ({
+        ...prev,
+        photoPreview: result,
+        photoBase64: base64,
+        photoFilename: file.name,
+        photoContentType: file.type,
+      }));
     };
     reader.readAsDataURL(file);
   };
@@ -232,7 +273,7 @@ export default function Items() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nome ou número de série..."
+            placeholder="Buscar por nome..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -278,7 +319,7 @@ export default function Items() {
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Package className="h-12 w-12 text-muted-foreground/30 mb-3" />
             <p className="text-muted-foreground font-medium">
-              Nenhum item encontrado
+              Nenhum equipamento encontrado
             </p>
             <p className="text-sm text-muted-foreground/70 mt-1">
               {search || statusFilter !== "all"
@@ -333,11 +374,9 @@ export default function Items() {
                         <h3 className="font-medium text-sm truncate">
                           {item.name}
                         </h3>
-                        {item.serialNumber && (
-                          <p className="text-xs text-muted-foreground mt-0.5 font-mono">
-                            {item.serialNumber}
-                          </p>
-                        )}
+                        <p className="text-[11px] text-muted-foreground/60 mt-0.5 font-mono">
+                          ID: {item.id}
+                        </p>
                       </div>
                       <Badge
                         variant="secondary"
@@ -346,7 +385,7 @@ export default function Items() {
                         {statusLabels[item.status]}
                       </Badge>
                     </div>
-                    <div className="flex items-center gap-2 mt-2">
+                    <div className="flex items-center gap-2 mt-1.5">
                       {item.categoryName && (
                         <span
                           className="text-xs px-2 py-0.5 rounded-full font-medium"
@@ -399,10 +438,76 @@ export default function Items() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {editingId ? "Editar Item" : "Novo Item"}
+              {editingId ? "Editar Equipamento" : "Novo Equipamento"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {/* Auto ID display (only when editing) */}
+            {editingId && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border">
+                <Hash className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">ID:</span>
+                <span className="text-xs font-mono font-medium">{editingId}</span>
+              </div>
+            )}
+
+            {/* Photo Upload */}
+            <div className="space-y-1.5">
+              <Label>Foto do equipamento</Label>
+              <div
+                className="relative border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
+                onClick={() => dialogFileInputRef.current?.click()}
+              >
+                {form.photoPreview ? (
+                  <div className="relative">
+                    <img
+                      src={form.photoPreview}
+                      alt="Preview"
+                      className="h-28 w-28 object-cover rounded-lg"
+                    />
+                    <button
+                      type="button"
+                      className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center shadow-sm hover:bg-destructive/90"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setForm((prev) => ({
+                          ...prev,
+                          photoPreview: null,
+                          photoBase64: null,
+                          photoFilename: null,
+                          photoContentType: null,
+                        }));
+                      }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <ImagePlus className="h-8 w-8 text-muted-foreground/40" />
+                    <p className="text-xs text-muted-foreground">
+                      Clique para selecionar uma foto
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/60">
+                      JPG, PNG ou WebP (máx. 5MB)
+                    </p>
+                  </>
+                )}
+                <input
+                  ref={dialogFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleDialogPhotoSelect(file);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Name */}
             <div className="space-y-1.5">
               <Label>Nome *</Label>
               <Input
@@ -411,59 +516,34 @@ export default function Items() {
                 placeholder="Nome do equipamento"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Categoria</Label>
-                <Select
-                  value={form.categoryId ? String(form.categoryId) : "none"}
-                  onValueChange={(v) =>
-                    setForm({
-                      ...form,
-                      categoryId: v === "none" ? undefined : Number(v),
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sem categoria</SelectItem>
-                    {categories?.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Nº de Série</Label>
-                <Input
-                  value={form.serialNumber}
-                  onChange={(e) =>
-                    setForm({ ...form, serialNumber: e.target.value })
-                  }
-                  placeholder="SN-000"
-                />
-              </div>
-            </div>
+
+            {/* Category */}
             <div className="space-y-1.5">
-              <Label>Status</Label>
+              <Label>Categoria</Label>
               <Select
-                value={form.status}
-                onValueChange={(v) => setForm({ ...form, status: v })}
+                value={form.categoryId ? String(form.categoryId) : "none"}
+                onValueChange={(v) =>
+                  setForm({
+                    ...form,
+                    categoryId: v === "none" ? undefined : Number(v),
+                  })
+                }
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="disponivel">Disponível</SelectItem>
-                  <SelectItem value="emprestado">Emprestado</SelectItem>
-                  <SelectItem value="manutencao">Manutenção</SelectItem>
-                  <SelectItem value="extraviado">Extraviado</SelectItem>
+                  <SelectItem value="none">Sem categoria</SelectItem>
+                  {categories?.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Description */}
             <div className="space-y-1.5">
               <Label>Descrição</Label>
               <Textarea
@@ -472,16 +552,7 @@ export default function Items() {
                   setForm({ ...form, description: e.target.value })
                 }
                 placeholder="Descrição do equipamento"
-                rows={2}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Observações</Label>
-              <Textarea
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                placeholder="Notas adicionais"
-                rows={2}
+                rows={3}
               />
             </div>
           </div>
@@ -507,9 +578,9 @@ export default function Items() {
       <AlertDialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir item?</AlertDialogTitle>
+            <AlertDialogTitle>Excluir equipamento?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. O item será removido permanentemente.
+              Esta ação não pode ser desfeita. O equipamento será removido permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
