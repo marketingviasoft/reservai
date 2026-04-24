@@ -1,17 +1,18 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { relations } from "drizzle-orm";
+import {
+  int,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  varchar,
+  bigint,
+  uniqueIndex,
+} from "drizzle-orm/mysql-core";
 
-/**
- * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
- */
+// ─── Users ───────────────────────────────────────────────────────────────────
 export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
@@ -25,4 +26,192 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+// ─── Categories ──────────────────────────────────────────────────────────────
+export const categories = mysqlTable("categories", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 128 }).notNull(),
+  description: text("description"),
+  color: varchar("color", { length: 7 }).default("#6366f1"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Category = typeof categories.$inferSelect;
+export type InsertCategory = typeof categories.$inferInsert;
+
+// ─── Items (Equipamentos) ────────────────────────────────────────────────────
+export const items = mysqlTable(
+  "items",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    name: varchar("name", { length: 256 }).notNull(),
+    description: text("description"),
+    categoryId: int("categoryId").references(() => categories.id),
+    serialNumber: varchar("serialNumber", { length: 128 }),
+    photoUrl: text("photoUrl"),
+    photoKey: varchar("photoKey", { length: 512 }),
+    status: mysqlEnum("status", [
+      "disponivel",
+      "emprestado",
+      "manutencao",
+      "extraviado",
+    ])
+      .default("disponivel")
+      .notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => [uniqueIndex("serial_number_idx").on(table.serialNumber)]
+);
+
+export type Item = typeof items.$inferSelect;
+export type InsertItem = typeof items.$inferInsert;
+
+// ─── Kits ────────────────────────────────────────────────────────────────────
+export const kits = mysqlTable("kits", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 256 }).notNull(),
+  description: text("description"),
+  status: mysqlEnum("status", ["completo", "incompleto"])
+    .default("completo")
+    .notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Kit = typeof kits.$inferSelect;
+export type InsertKit = typeof kits.$inferInsert;
+
+// ─── Kit Items (Pivô Many-to-Many) ──────────────────────────────────────────
+export const kitItems = mysqlTable("kit_items", {
+  id: int("id").autoincrement().primaryKey(),
+  kitId: int("kitId")
+    .notNull()
+    .references(() => kits.id, { onDelete: "cascade" }),
+  itemId: int("itemId")
+    .notNull()
+    .references(() => items.id, { onDelete: "cascade" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type KitItem = typeof kitItems.$inferSelect;
+export type InsertKitItem = typeof kitItems.$inferInsert;
+
+// ─── Clients (Clientes) ─────────────────────────────────────────────────────
+export const clients = mysqlTable("clients", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 256 }).notNull(),
+  email: varchar("email", { length: 320 }),
+  phone: varchar("phone", { length: 32 }),
+  company: varchar("company", { length: 256 }),
+  document: varchar("document", { length: 32 }),
+  address: text("address"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Client = typeof clients.$inferSelect;
+export type InsertClient = typeof clients.$inferInsert;
+
+// ─── Reservations (Reservas) ─────────────────────────────────────────────────
+export const reservations = mysqlTable("reservations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId")
+    .notNull()
+    .references(() => users.id),
+  clientId: int("clientId").references(() => clients.id),
+  startDate: bigint("startDate", { mode: "number" }).notNull(), // UTC ms
+  endDate: bigint("endDate", { mode: "number" }).notNull(), // UTC ms
+  status: mysqlEnum("status", ["pendente", "ativa", "concluida", "cancelada"])
+    .default("pendente")
+    .notNull(),
+  checkoutAt: bigint("checkoutAt", { mode: "number" }), // UTC ms when checked out
+  checkoutByUserId: int("checkoutByUserId").references(() => users.id),
+  checkinAt: bigint("checkinAt", { mode: "number" }), // UTC ms when checked in
+  checkinByUserId: int("checkinByUserId").references(() => users.id),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Reservation = typeof reservations.$inferSelect;
+export type InsertReservation = typeof reservations.$inferInsert;
+
+// ─── Reservation Items (Itens da Reserva) ────────────────────────────────────
+export const reservationItems = mysqlTable("reservation_items", {
+  id: int("id").autoincrement().primaryKey(),
+  reservationId: int("reservationId")
+    .notNull()
+    .references(() => reservations.id, { onDelete: "cascade" }),
+  itemId: int("itemId").references(() => items.id),
+  kitId: int("kitId").references(() => kits.id),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ReservationItem = typeof reservationItems.$inferSelect;
+export type InsertReservationItem = typeof reservationItems.$inferInsert;
+
+// ─── Relations ───────────────────────────────────────────────────────────────
+export const itemsRelations = relations(items, ({ one }) => ({
+  category: one(categories, {
+    fields: [items.categoryId],
+    references: [categories.id],
+  }),
+}));
+
+export const kitItemsRelations = relations(kitItems, ({ one }) => ({
+  kit: one(kits, { fields: [kitItems.kitId], references: [kits.id] }),
+  item: one(items, { fields: [kitItems.itemId], references: [items.id] }),
+}));
+
+export const kitsRelations = relations(kits, ({ many }) => ({
+  kitItems: many(kitItems),
+}));
+
+export const reservationsRelations = relations(reservations, ({ one, many }) => ({
+  user: one(users, {
+    fields: [reservations.userId],
+    references: [users.id],
+  }),
+  client: one(clients, {
+    fields: [reservations.clientId],
+    references: [clients.id],
+  }),
+  checkoutByUser: one(users, {
+    fields: [reservations.checkoutByUserId],
+    references: [users.id],
+  }),
+  checkinByUser: one(users, {
+    fields: [reservations.checkinByUserId],
+    references: [users.id],
+  }),
+  reservationItems: many(reservationItems),
+}));
+
+export const reservationItemsRelations = relations(
+  reservationItems,
+  ({ one }) => ({
+    reservation: one(reservations, {
+      fields: [reservationItems.reservationId],
+      references: [reservations.id],
+    }),
+    item: one(items, {
+      fields: [reservationItems.itemId],
+      references: [items.id],
+    }),
+    kit: one(kits, {
+      fields: [reservationItems.kitId],
+      references: [kits.id],
+    }),
+  })
+);
+
+export const clientsRelations = relations(clients, ({ many }) => ({
+  reservations: many(reservations),
+}));
+
+export const usersRelations = relations(users, ({ many }) => ({
+  reservations: many(reservations),
+}));
