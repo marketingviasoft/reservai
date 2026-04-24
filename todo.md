@@ -99,3 +99,10 @@
 - [x] CheckInOut.tsx: referência "colaborador" → "membro da equipe" onde aplicável
 - [x] Reservations.tsx: referência "colaborador" → "membro da equipe" onde aplicável
 - [x] Badge de role: "Colaborador" → "Membro"
+
+## Renomear: Inventário → Equipamentos
+- [x] Sidebar: label "Inventário" → "Equipamentos"
+- [x] Dashboard Home: atalho "Inventário" → "Equipamentos"
+- [x] Tela Items.tsx: título e textos "Inventário" → "Equipamentos"
+- [x] DashboardLayout.tsx: descrição do sistema se houver referência
+- [x] Demais referências textuais em todo o frontend

@@ -41,7 +41,7 @@ import { Button } from "./ui/button";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: Package, label: "Inventário", path: "/items" },
+  { icon: Package, label: "Equipamentos", path: "/items" },
   { icon: Boxes, label: "Kits", path: "/kits" },
   { icon: Users, label: "Equipe", path: "/team" },
   { icon: CalendarDays, label: "Calendário", path: "/calendar" },
@@ -100,7 +100,7 @@ export default function DashboardLayout({
               Reserv<span className="text-primary font-bold">AI</span>
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm leading-relaxed">
-              Gestão inteligente de inventários e reservas. Faça login para acessar o sistema.
+              Gestão inteligente de equipamentos e reservas. Faça login para acessar o sistema.
             </p>
           </div>
           <Button

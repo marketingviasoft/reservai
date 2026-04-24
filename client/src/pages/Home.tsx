@@ -89,7 +89,7 @@ export default function Home() {
           Olá, {user?.name?.split(" ")[0] || "Usuário"}
         </h1>
         <p className="text-muted-foreground mt-1">
-          Visão geral do sistema de reservas e inventário.
+          Visão geral do sistema de reservas e equipamentos.
         </p>
       </div>
 
@@ -176,7 +176,7 @@ export default function Home() {
           <div className="h-9 w-9 rounded-lg bg-purple-50 flex items-center justify-center">
             <Package className="h-4 w-4 text-purple-600" />
           </div>
-          <span className="text-sm font-medium">Inventário</span>
+          <span className="text-sm font-medium">Equipamentos</span>
         </button>
         <button
           onClick={() => setLocation("/team")}
