@@ -60,7 +60,7 @@ O backend ja possui:
 
 - autenticacao via OAuth com cookie de sessao JWT;
 - RBAC basico com `adminProcedure` e `protectedProcedure`;
-- persistencia em MySQL via Drizzle ORM;
+- persistencia em Postgres/Supabase via Drizzle ORM;
 - upload de imagens para storage via URL pre-assinada.
 
 ### Banco de dados e dominio atual
@@ -116,7 +116,7 @@ Pontos ainda desalinhados:
 
 - TypeScript
 - Node.js
-- SQL (MySQL)
+- SQL (Postgres)
 
 ### Frontend
 
@@ -139,7 +139,7 @@ Pontos ainda desalinhados:
 - Zod
 - SuperJSON
 - Drizzle ORM
-- mysql2
+- postgres
 - jose
 - axios
 - nanoid
@@ -160,7 +160,7 @@ Pontos ainda desalinhados:
 
 ### Variaveis de ambiente relevantes
 
-- `DATABASE_URL`
+- `DATABASE_URL` (connection string Postgres/Supabase, preferencialmente pooler transaction mode para Vercel)
 - `JWT_SECRET`
 - `OAUTH_SERVER_URL`
 - `OWNER_OPEN_ID`

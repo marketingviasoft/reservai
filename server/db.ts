@@ -1,5 +1,6 @@
 import { and, eq, gte, lte, or, ne, like, inArray, sql, desc, asc, count } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import {
   InsertUser,
   users,
@@ -30,11 +31,21 @@ function generateItemCode(): string {
 }
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _client: ReturnType<typeof postgres> | null = null;
+
+const touchUpdatedAt = <T extends Record<string, unknown>>(data: T) => ({
+  ...data,
+  updatedAt: new Date(),
+});
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _client = postgres(process.env.DATABASE_URL, {
+        max: 1,
+        prepare: false,
+      });
+      _db = drizzle(_client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -66,7 +77,14 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     else if (user.openId === ENV.ownerOpenId) { values.role = "admin"; updateSet.role = "admin"; }
     if (!values.lastSignedIn) values.lastSignedIn = new Date();
     if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
-    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+    updateSet.updatedAt = new Date();
+    await db
+      .insert(users)
+      .values(values)
+      .onConflictDoUpdate({
+        target: users.openId,
+        set: updateSet,
+      });
   } catch (error) { console.error("[Database] Failed to upsert user:", error); throw error; }
 }
 
@@ -107,13 +125,13 @@ export async function getUserById(id: number) {
 export async function updateUserProfile(id: number, data: { phone?: string | null; extension?: string | null; department?: string | null }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(users).set(data).where(eq(users.id, id));
+  await db.update(users).set(touchUpdatedAt(data)).where(eq(users.id, id));
 }
 
 export async function updateUserRole(id: number, role: "user" | "admin") {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(users).set({ role }).where(eq(users.id, id));
+  await db.update(users).set(touchUpdatedAt({ role })).where(eq(users.id, id));
 }
 
 // ─── Categories ──────────────────────────────────────────────────────────────
@@ -126,14 +144,14 @@ export async function listCategories() {
 export async function createCategory(data: InsertCategory) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(categories).values(data);
-  return { id: result[0].insertId };
+  const [created] = await db.insert(categories).values(data).returning({ id: categories.id });
+  return { id: created.id };
 }
 
 export async function updateCategory(id: number, data: Partial<InsertCategory>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(categories).set(data).where(eq(categories.id, id));
+  await db.update(categories).set(touchUpdatedAt(data)).where(eq(categories.id, id));
 }
 
 export async function deleteCategory(id: number) {
@@ -209,14 +227,14 @@ export async function createItem(data: Omit<InsertItem, "code">) {
     if (existing.length === 0) break;
     code = generateItemCode();
   }
-  const result = await db.insert(items).values({ ...data, code });
-  return { id: result[0].insertId, code };
+  const [created] = await db.insert(items).values({ ...data, code }).returning({ id: items.id });
+  return { id: created.id, code };
 }
 
 export async function updateItem(id: number, data: Partial<InsertItem>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(items).set(data).where(eq(items.id, id));
+  await db.update(items).set(touchUpdatedAt(data)).where(eq(items.id, id));
 }
 
 export async function deleteItem(id: number) {
@@ -271,14 +289,14 @@ export async function getKitById(id: number) {
 export async function createKit(data: InsertKit) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(kits).values(data);
-  return { id: result[0].insertId };
+  const [created] = await db.insert(kits).values(data).returning({ id: kits.id });
+  return { id: created.id };
 }
 
 export async function updateKit(id: number, data: Partial<InsertKit>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(kits).set(data).where(eq(kits.id, id));
+  await db.update(kits).set(touchUpdatedAt(data)).where(eq(kits.id, id));
 }
 
 export async function deleteKit(id: number) {
@@ -319,7 +337,10 @@ export async function recalculateKitStatus(kitId: number) {
   const hasUnavailable = kitItemsData.some(
     (ki) => ki.itemStatus === "manutencao" || ki.itemStatus === "extraviado" || ki.itemStatus === "emprestado"
   );
-  await db.update(kits).set({ status: hasUnavailable ? "incompleto" : "completo" }).where(eq(kits.id, kitId));
+  await db
+    .update(kits)
+    .set(touchUpdatedAt({ status: hasUnavailable ? "incompleto" : "completo" }))
+    .where(eq(kits.id, kitId));
 }
 
 // ─── Reservations ────────────────────────────────────────────────────────────
@@ -435,8 +456,8 @@ export async function getReservationById(id: number) {
 export async function createReservation(data: InsertReservation, itemIds: number[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(reservations).values(data);
-  const reservationId = result[0].insertId;
+  const [created] = await db.insert(reservations).values(data).returning({ id: reservations.id });
+  const reservationId = created.id;
 
   const uniqueItemIds = Array.from(new Set(itemIds));
   const resItems: InsertReservationItem[] = uniqueItemIds.map((itemId) => ({
@@ -453,7 +474,7 @@ export async function createReservation(data: InsertReservation, itemIds: number
 export async function updateReservation(id: number, data: Partial<InsertReservation>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(reservations).set(data).where(eq(reservations.id, id));
+  await db.update(reservations).set(touchUpdatedAt(data)).where(eq(reservations.id, id));
 }
 
 export async function deleteReservation(id: number) {
