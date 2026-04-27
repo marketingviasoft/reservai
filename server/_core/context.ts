@@ -14,7 +14,7 @@ export async function createContext(
 ): Promise<TrpcContext> {
   let user: User | null = null;
 
-  if (process.env.NODE_ENV !== "production" && !ENV.oAuthServerUrl) {
+  if (process.env.NODE_ENV !== "production" && !ENV.supabaseUrl) {
     return {
       req: opts.req,
       res: opts.res,

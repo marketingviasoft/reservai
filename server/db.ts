@@ -74,7 +74,13 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     textFields.forEach(assignNullable);
     if (user.lastSignedIn !== undefined) { values.lastSignedIn = user.lastSignedIn; updateSet.lastSignedIn = user.lastSignedIn; }
     if (user.role !== undefined) { values.role = user.role; updateSet.role = user.role; }
-    else if (user.openId === ENV.ownerOpenId) { values.role = "admin"; updateSet.role = "admin"; }
+    else if (
+      (user.email && ENV.adminEmails.includes(user.email.toLowerCase())) ||
+      (await countUsers()) === 0
+    ) {
+      values.role = "admin";
+      updateSet.role = "admin";
+    }
     if (!values.lastSignedIn) values.lastSignedIn = new Date();
     if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
     updateSet.updatedAt = new Date();
@@ -86,6 +92,13 @@ export async function upsertUser(user: InsertUser): Promise<void> {
         set: updateSet,
       });
   } catch (error) { console.error("[Database] Failed to upsert user:", error); throw error; }
+}
+
+export async function countUsers() {
+  const db = await getDb();
+  if (!db) return 0;
+  const [row] = await db.select({ total: count() }).from(users);
+  return Number(row?.total ?? 0);
 }
 
 export async function getUserByOpenId(openId: string) {

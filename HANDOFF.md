@@ -26,7 +26,7 @@ Estrutura principal:
 
 - `client/`: aplicacao React/Vite.
 - `server/`: rotas tRPC, acesso a dados e integracoes.
-- `server/_core/`: bootstrap do servidor, autenticacao OAuth, contexto, helpers herdados do template.
+- `server/_core/`: bootstrap do servidor, autenticacao Supabase, contexto, helpers herdados do template.
 - `drizzle/`: schema, relacoes e migrations SQL.
 - `shared/`: constantes e tipos compartilhados.
 
@@ -58,7 +58,7 @@ Rotas tRPC existentes:
 
 O backend ja possui:
 
-- autenticacao via OAuth com cookie de sessao JWT;
+- autenticacao via Supabase Auth;
 - RBAC basico com `adminProcedure` e `protectedProcedure`;
 - persistencia em Postgres/Supabase via Drizzle ORM;
 - upload de imagens para storage via URL pre-assinada.
@@ -154,20 +154,20 @@ Pontos ainda desalinhados:
 
 ### Integracoes e servicos externos
 
-- OAuth provider externo via `OAUTH_SERVER_URL`
-- sessao JWT em cookie HTTP-only
-- storage via Forge/S3 pre-signed URLs
+- Supabase Auth
+- sessao via access token Supabase enviado no header `Authorization`
+- storage via Supabase Storage
 
 ### Variaveis de ambiente relevantes
 
 - `DATABASE_URL` (connection string Postgres/Supabase, preferencialmente pooler transaction mode para Vercel)
-- `JWT_SECRET`
-- `OAUTH_SERVER_URL`
-- `OWNER_OPEN_ID`
-- `VITE_APP_ID`
-- `VITE_OAUTH_PORTAL_URL`
-- `BUILT_IN_FORGE_API_URL`
-- `BUILT_IN_FORGE_API_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `ADMIN_EMAILS` (opcional, lista separada por virgula)
+- `SUPABASE_STORAGE_BUCKET` (opcional, padrao `reservai-assets`)
 
 ## 4. Regras de Negocio e Fluxos
 

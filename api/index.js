@@ -1,12 +1,15 @@
+// server/_core/loadEnv.ts
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+dotenv.config();
+
 // server/_core/app.ts
-import "dotenv/config";
 import express from "express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 // shared/const.ts
 var COOKIE_NAME = "app_session_id";
 var ONE_YEAR_MS = 1e3 * 60 * 60 * 24 * 365;
-var AXIOS_TIMEOUT_MS = 3e4;
 var UNAUTHED_ERR_MSG = "Please login (10001)";
 var NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
 
@@ -234,14 +237,13 @@ var usersRelations = relations(users, ({ many }) => ({
 
 // server/_core/env.ts
 var ENV = {
-  appId: process.env.VITE_APP_ID ?? "",
-  cookieSecret: process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
-  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
+  adminEmails: (process.env.ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean),
   isProduction: process.env.NODE_ENV === "production",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? ""
+  supabaseUrl: process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "",
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "",
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+  supabaseStorageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? "reservai-assets"
 };
 
 // server/db.ts
@@ -299,7 +301,7 @@ async function upsertUser(user) {
     if (user.role !== void 0) {
       values.role = user.role;
       updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
+    } else if (user.email && ENV.adminEmails.includes(user.email.toLowerCase()) || await countUsers() === 0) {
       values.role = "admin";
       updateSet.role = "admin";
     }
@@ -314,6 +316,12 @@ async function upsertUser(user) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
   }
+}
+async function countUsers() {
+  const db = await getDb();
+  if (!db) return 0;
+  const [row] = await db.select({ total: count() }).from(users);
+  return Number(row?.total ?? 0);
 }
 async function getUserByOpenId(openId) {
   const db = await getDb();
@@ -787,15 +795,19 @@ async function getUserReservationHistory(userId) {
 }
 
 // server/storage.ts
-function getForgeConfig() {
-  const forgeUrl = ENV.forgeApiUrl;
-  const forgeKey = ENV.forgeApiKey;
-  if (!forgeUrl || !forgeKey) {
+import { createClient } from "@supabase/supabase-js";
+function getSupabaseStorageClient() {
+  if (!ENV.supabaseUrl || !ENV.supabaseServiceRoleKey) {
     throw new Error(
-      "Storage config missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
+      "Storage config missing: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY"
     );
   }
-  return { forgeUrl: forgeUrl.replace(/\/+$/, ""), forgeKey };
+  return createClient(ENV.supabaseUrl, ENV.supabaseServiceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  });
 }
 function normalizeKey(relKey) {
   return relKey.replace(/^\/+/, "");
@@ -806,30 +818,32 @@ function appendHashSuffix(relKey) {
   if (lastDot === -1) return `${relKey}_${hash}`;
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
 }
+async function ensureBucket(supabase) {
+  const bucket = ENV.supabaseStorageBucket;
+  const { data } = await supabase.storage.getBucket(bucket);
+  if (data) return;
+  const { error } = await supabase.storage.createBucket(bucket, {
+    public: true,
+    fileSizeLimit: "10MB"
+  });
+  if (error && !/already exists/i.test(error.message)) {
+    throw new Error(`Failed to create Supabase storage bucket: ${error.message}`);
+  }
+}
 async function storagePut(relKey, data, contentType = "application/octet-stream") {
-  const { forgeUrl, forgeKey } = getForgeConfig();
+  const supabase = getSupabaseStorageClient();
+  await ensureBucket(supabase);
   const key = appendHashSuffix(normalizeKey(relKey));
-  const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
-  presignUrl.searchParams.set("path", key);
-  const presignResp = await fetch(presignUrl, {
-    headers: { Authorization: `Bearer ${forgeKey}` }
+  const body = typeof data === "string" ? Buffer.from(data) : data;
+  const { error } = await supabase.storage.from(ENV.supabaseStorageBucket).upload(key, body, {
+    contentType,
+    upsert: true
   });
-  if (!presignResp.ok) {
-    const msg = await presignResp.text().catch(() => presignResp.statusText);
-    throw new Error(`Storage presign failed (${presignResp.status}): ${msg}`);
+  if (error) {
+    throw new Error(`Supabase storage upload failed: ${error.message}`);
   }
-  const { url: s3Url } = await presignResp.json();
-  if (!s3Url) throw new Error("Forge returned empty presign URL");
-  const blob = typeof data === "string" ? new Blob([data], { type: contentType }) : new Blob([data], { type: contentType });
-  const uploadResp = await fetch(s3Url, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: blob
-  });
-  if (!uploadResp.ok) {
-    throw new Error(`Storage upload to S3 failed (${uploadResp.status})`);
-  }
-  return { key, url: `/manus-storage/${key}` };
+  const { data: publicUrlData } = supabase.storage.from(ENV.supabaseStorageBucket).getPublicUrl(key);
+  return { key, url: publicUrlData.publicUrl };
 }
 
 // server/reservationAccess.ts
@@ -1130,217 +1144,53 @@ var HttpError = class extends Error {
 var ForbiddenError = (msg) => new HttpError(403, msg);
 
 // server/_core/sdk.ts
-import axios from "axios";
-import { parse as parseCookieHeader } from "cookie";
-import { SignJWT, jwtVerify } from "jose";
-var isNonEmptyString = (value) => typeof value === "string" && value.length > 0;
-var EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
-var GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
-var GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
-var OAuthService = class {
-  constructor(client) {
-    this.client = client;
-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
-    if (!ENV.oAuthServerUrl) {
-      console.error(
-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
-      );
+import { createClient as createClient2 } from "@supabase/supabase-js";
+function getBearerToken(req) {
+  const header = req.headers.authorization;
+  if (!header) return null;
+  const value = Array.isArray(header) ? header[0] : header;
+  const match = value.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] ?? null;
+}
+function getSupabaseClient() {
+  if (!ENV.supabaseUrl || !ENV.supabaseAnonKey) {
+    throw new Error(
+      "Supabase auth is not configured: set SUPABASE_URL and SUPABASE_ANON_KEY"
+    );
+  }
+  return createClient2(ENV.supabaseUrl, ENV.supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
     }
-  }
-  decodeState(state) {
-    const redirectUri = atob(state);
-    return redirectUri;
-  }
-  async getTokenByCode(code, state) {
-    const payload = {
-      clientId: ENV.appId,
-      grantType: "authorization_code",
-      code,
-      redirectUri: this.decodeState(state)
-    };
-    const { data } = await this.client.post(
-      EXCHANGE_TOKEN_PATH,
-      payload
-    );
-    return data;
-  }
-  async getUserInfoByToken(token) {
-    const { data } = await this.client.post(
-      GET_USER_INFO_PATH,
-      {
-        accessToken: token.accessToken
-      }
-    );
-    return data;
-  }
-};
-var createOAuthHttpClient = () => axios.create({
-  baseURL: ENV.oAuthServerUrl,
-  timeout: AXIOS_TIMEOUT_MS
-});
+  });
+}
 var SDKServer = class {
-  client;
-  oauthService;
-  constructor(client = createOAuthHttpClient()) {
-    this.client = client;
-    this.oauthService = new OAuthService(this.client);
-  }
-  deriveLoginMethod(platforms, fallback) {
-    if (fallback && fallback.length > 0) return fallback;
-    if (!Array.isArray(platforms) || platforms.length === 0) return null;
-    const set = new Set(
-      platforms.filter((p) => typeof p === "string")
-    );
-    if (set.has("REGISTERED_PLATFORM_EMAIL")) return "email";
-    if (set.has("REGISTERED_PLATFORM_GOOGLE")) return "google";
-    if (set.has("REGISTERED_PLATFORM_APPLE")) return "apple";
-    if (set.has("REGISTERED_PLATFORM_MICROSOFT") || set.has("REGISTERED_PLATFORM_AZURE"))
-      return "microsoft";
-    if (set.has("REGISTERED_PLATFORM_GITHUB")) return "github";
-    const first = Array.from(set)[0];
-    return first ? first.toLowerCase() : null;
-  }
-  /**
-   * Exchange OAuth authorization code for access token
-   * @example
-   * const tokenResponse = await sdk.exchangeCodeForToken(code, state);
-   */
-  async exchangeCodeForToken(code, state) {
-    return this.oauthService.getTokenByCode(code, state);
-  }
-  /**
-   * Get user information using access token
-   * @example
-   * const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-   */
-  async getUserInfo(accessToken) {
-    const data = await this.oauthService.getUserInfoByToken({
-      accessToken
-    });
-    const loginMethod = this.deriveLoginMethod(
-      data?.platforms,
-      data?.platform ?? data.platform ?? null
-    );
-    return {
-      ...data,
-      platform: loginMethod,
-      loginMethod
-    };
-  }
-  parseCookies(cookieHeader) {
-    if (!cookieHeader) {
-      return /* @__PURE__ */ new Map();
-    }
-    const parsed = parseCookieHeader(cookieHeader);
-    return new Map(Object.entries(parsed));
-  }
-  getSessionSecret() {
-    const secret = ENV.cookieSecret;
-    return new TextEncoder().encode(secret);
-  }
-  /**
-   * Create a session token for a Manus user openId
-   * @example
-   * const sessionToken = await sdk.createSessionToken(userInfo.openId);
-   */
-  async createSessionToken(openId, options = {}) {
-    return this.signSession(
-      {
-        openId,
-        appId: ENV.appId,
-        name: options.name || ""
-      },
-      options
-    );
-  }
-  async signSession(payload, options = {}) {
-    const issuedAt = Date.now();
-    const expiresInMs = options.expiresInMs ?? ONE_YEAR_MS;
-    const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1e3);
-    const secretKey = this.getSessionSecret();
-    return new SignJWT({
-      openId: payload.openId,
-      appId: payload.appId,
-      name: payload.name
-    }).setProtectedHeader({ alg: "HS256", typ: "JWT" }).setExpirationTime(expirationSeconds).sign(secretKey);
-  }
-  async verifySession(cookieValue) {
-    if (!cookieValue) {
-      console.warn("[Auth] Missing session cookie");
-      return null;
-    }
-    try {
-      const secretKey = this.getSessionSecret();
-      const { payload } = await jwtVerify(cookieValue, secretKey, {
-        algorithms: ["HS256"]
-      });
-      const { openId, appId, name } = payload;
-      if (!isNonEmptyString(openId) || !isNonEmptyString(appId) || !isNonEmptyString(name)) {
-        console.warn("[Auth] Session payload missing required fields");
-        return null;
-      }
-      return {
-        openId,
-        appId,
-        name
-      };
-    } catch (error) {
-      console.warn("[Auth] Session verification failed", String(error));
-      return null;
-    }
-  }
-  async getUserInfoWithJwt(jwtToken) {
-    const payload = {
-      jwtToken,
-      projectId: ENV.appId
-    };
-    const { data } = await this.client.post(
-      GET_USER_INFO_WITH_JWT_PATH,
-      payload
-    );
-    const loginMethod = this.deriveLoginMethod(
-      data?.platforms,
-      data?.platform ?? data.platform ?? null
-    );
-    return {
-      ...data,
-      platform: loginMethod,
-      loginMethod
-    };
-  }
   async authenticateRequest(req) {
-    const cookies = this.parseCookies(req.headers.cookie);
-    const sessionCookie = cookies.get(COOKIE_NAME);
-    const session = await this.verifySession(sessionCookie);
-    if (!session) {
-      throw ForbiddenError("Invalid session cookie");
+    const accessToken = getBearerToken(req);
+    if (!accessToken) {
+      throw ForbiddenError("Missing Supabase access token");
     }
-    const sessionUserId = session.openId;
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.auth.getUser(accessToken);
+    if (error || !data.user) {
+      throw ForbiddenError("Invalid Supabase access token");
+    }
+    const supabaseUser = data.user;
+    const email = supabaseUser.email ?? null;
+    const name = supabaseUser.user_metadata?.name ?? supabaseUser.user_metadata?.full_name ?? email ?? "Usu\xE1rio";
     const signedInAt = /* @__PURE__ */ new Date();
-    let user = await getUserByOpenId(sessionUserId);
-    if (!user) {
-      try {
-        const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-        await upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-          lastSignedIn: signedInAt
-        });
-        user = await getUserByOpenId(userInfo.openId);
-      } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
-      }
-    }
+    await upsertUser({
+      openId: supabaseUser.id,
+      name,
+      email,
+      loginMethod: "supabase",
+      lastSignedIn: signedInAt
+    });
+    const user = await getUserByOpenId(supabaseUser.id);
     if (!user) {
       throw ForbiddenError("User not found");
     }
-    await upsertUser({
-      openId: user.openId,
-      lastSignedIn: signedInAt
-    });
     return user;
   }
 };
@@ -1349,7 +1199,7 @@ var sdk = new SDKServer();
 // server/_core/context.ts
 async function createContext(opts) {
   let user = null;
-  if (process.env.NODE_ENV !== "production" && !ENV.oAuthServerUrl) {
+  if (process.env.NODE_ENV !== "production" && !ENV.supabaseUrl) {
     return {
       req: opts.req,
       res: opts.res,
@@ -1381,95 +1231,11 @@ async function createContext(opts) {
   };
 }
 
-// server/_core/oauth.ts
-function getQueryParam(req, key) {
-  const value = req.query[key];
-  return typeof value === "string" ? value : void 0;
-}
-function registerOAuthRoutes(app) {
-  app.get("/api/oauth/callback", async (req, res) => {
-    const code = getQueryParam(req, "code");
-    const state = getQueryParam(req, "state");
-    if (!code || !state) {
-      res.status(400).json({ error: "code and state are required" });
-      return;
-    }
-    try {
-      const tokenResponse = await sdk.exchangeCodeForToken(code, state);
-      const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-      if (!userInfo.openId) {
-        res.status(400).json({ error: "openId missing from user info" });
-        return;
-      }
-      await upsertUser({
-        openId: userInfo.openId,
-        name: userInfo.name || null,
-        email: userInfo.email ?? null,
-        loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-        lastSignedIn: /* @__PURE__ */ new Date()
-      });
-      const sessionToken = await sdk.createSessionToken(userInfo.openId, {
-        name: userInfo.name || "",
-        expiresInMs: ONE_YEAR_MS
-      });
-      const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-      res.redirect(302, "/");
-    } catch (error) {
-      console.error("[OAuth] Callback failed", error);
-      res.status(500).json({ error: "OAuth callback failed" });
-    }
-  });
-}
-
-// server/_core/storageProxy.ts
-function registerStorageProxy(app) {
-  app.get("/manus-storage/*", async (req, res) => {
-    const key = req.params[0];
-    if (!key) {
-      res.status(400).send("Missing storage key");
-      return;
-    }
-    if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
-      res.status(500).send("Storage proxy not configured");
-      return;
-    }
-    try {
-      const forgeUrl = new URL(
-        "v1/storage/presign/get",
-        ENV.forgeApiUrl.replace(/\/+$/, "") + "/"
-      );
-      forgeUrl.searchParams.set("path", key);
-      const forgeResp = await fetch(forgeUrl, {
-        headers: { Authorization: `Bearer ${ENV.forgeApiKey}` }
-      });
-      if (!forgeResp.ok) {
-        const body = await forgeResp.text().catch(() => "");
-        console.error(`[StorageProxy] forge error: ${forgeResp.status} ${body}`);
-        res.status(502).send("Storage backend error");
-        return;
-      }
-      const { url } = await forgeResp.json();
-      if (!url) {
-        res.status(502).send("Empty signed URL from backend");
-        return;
-      }
-      res.set("Cache-Control", "no-store");
-      res.redirect(307, url);
-    } catch (err) {
-      console.error("[StorageProxy] failed:", err);
-      res.status(502).send("Storage proxy error");
-    }
-  });
-}
-
 // server/_core/app.ts
 function createApp() {
   const app = express();
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  registerStorageProxy(app);
-  registerOAuthRoutes(app);
   app.use(
     "/api/trpc",
     createExpressMiddleware({

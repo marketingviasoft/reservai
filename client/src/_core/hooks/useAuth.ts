@@ -1,4 +1,5 @@
 import { getLoginUrl } from "@/const";
+import { supabase } from "@/lib/supabase";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
@@ -27,6 +28,7 @@ export function useAuth(options?: UseAuthOptions) {
 
   const logout = useCallback(async () => {
     try {
+      await supabase?.auth.signOut();
       await logoutMutation.mutateAsync();
     } catch (error: unknown) {
       if (
@@ -44,7 +46,7 @@ export function useAuth(options?: UseAuthOptions) {
 
   const state = useMemo(() => {
     localStorage.setItem(
-      "manus-runtime-user-info",
+      "reservai-user-info",
       JSON.stringify(meQuery.data)
     );
     return {
@@ -68,7 +70,7 @@ export function useAuth(options?: UseAuthOptions) {
     if (typeof window === "undefined") return;
     if (window.location.pathname === redirectPath) return;
 
-    window.location.href = redirectPath
+    window.location.href = redirectPath;
   }, [
     redirectOnUnauthenticated,
     redirectPath,

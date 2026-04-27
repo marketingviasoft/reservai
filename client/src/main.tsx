@@ -7,6 +7,7 @@ import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
+import { supabase } from "./lib/supabase";
 
 const queryClient = new QueryClient();
 
@@ -42,14 +43,24 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
+      async headers() {
+        const { data } = supabase
+          ? await supabase.auth.getSession()
+          : { data: { session: null } };
+        const token = data.session?.access_token;
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      },
       fetch(input, init) {
         return globalThis.fetch(input, {
           ...(init ?? {}),
-          credentials: "include",
         });
       },
     }),
   ],
+});
+
+supabase?.auth.onAuthStateChange(() => {
+  void queryClient.invalidateQueries();
 });
 
 createRoot(document.getElementById("root")!).render(
