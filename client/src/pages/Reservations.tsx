@@ -77,7 +77,6 @@ type ReservationForm = {
   endDate: string;
   notes: string;
   selectedItemIds: number[];
-  selectedKitIds: number[];
 };
 
 const emptyForm: ReservationForm = {
@@ -85,12 +84,10 @@ const emptyForm: ReservationForm = {
   endDate: "",
   notes: "",
   selectedItemIds: [],
-  selectedKitIds: [],
 };
 
 export default function Reservations() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
   const utils = trpc.useUtils();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -171,8 +168,8 @@ export default function Reservations() {
       toast.error("Datas de início e fim são obrigatórias");
       return;
     }
-    if (form.selectedItemIds.length === 0 && form.selectedKitIds.length === 0) {
-      toast.error("Selecione pelo menos um item ou kit");
+    if (form.selectedItemIds.length === 0) {
+      toast.error("Selecione pelo menos um item");
       return;
     }
     const startDate = new Date(form.startDate).getTime();
@@ -186,7 +183,6 @@ export default function Reservations() {
       endDate,
       notes: form.notes || undefined,
       itemIds: form.selectedItemIds,
-      kitIds: form.selectedKitIds,
     });
   };
 
@@ -201,15 +197,31 @@ export default function Reservations() {
     }));
   };
 
-  const toggleKit = (kitId: number) => {
-    const isUnavailable = availability?.unavailableKitIds?.includes(kitId);
-    if (isUnavailable) return; // Prevent selecting unavailable kits
+  const getComboSelectableItemIds = (kit: any) =>
+    (kit.items || [])
+      .filter((item: any) => item.itemStatus === "disponivel")
+      .map((item: any) => item.itemId)
+      .filter((itemId: number) => !availability?.unavailableItemIds?.includes(itemId));
+
+  const applyCombo = (kit: any) => {
+    const selectableItemIds = getComboSelectableItemIds(kit);
+    const totalItems = kit.items?.length || 0;
+    if (selectableItemIds.length === 0) {
+      toast.warning("Nenhum item deste combo está disponível para o período selecionado");
+      return;
+    }
+
     setForm((prev) => ({
       ...prev,
-      selectedKitIds: prev.selectedKitIds.includes(kitId)
-        ? prev.selectedKitIds.filter((id) => id !== kitId)
-        : [...prev.selectedKitIds, kitId],
+      selectedItemIds: Array.from(new Set([...prev.selectedItemIds, ...selectableItemIds])),
     }));
+
+    const skippedCount = totalItems - selectableItemIds.length;
+    if (skippedCount > 0) {
+      toast.warning(`${skippedCount} item(ns) indisponível(is) foram ignorados`);
+    } else {
+      toast.success("Combo adicionado ao carrinho");
+    }
   };
 
   // Clear selections that become unavailable when dates change
@@ -219,9 +231,6 @@ export default function Reservations() {
       ...prev,
       selectedItemIds: prev.selectedItemIds.filter(
         (id) => !availability.unavailableItemIds.includes(id)
-      ),
-      selectedKitIds: prev.selectedKitIds.filter(
-        (id) => !availability.unavailableKitIds.includes(id)
       ),
     }));
   }, [availability]);
@@ -243,15 +252,15 @@ export default function Reservations() {
     );
   }, [reservations, search]);
 
-  // Separate available and unavailable items/kits for the form
+  // Separate available items and combo shortcuts for the form
   const availableItems = useMemo(() => {
     if (!allItems) return [];
     return allItems.filter((item) => item.status === "disponivel");
   }, [allItems]);
 
-  const availableKits = useMemo(() => {
+  const comboTemplates = useMemo(() => {
     if (!allKits) return [];
-    return allKits.filter((kit) => kit.status === "completo");
+    return allKits.filter((kit) => (kit.items?.length || 0) > 0);
   }, [allKits]);
 
   const hasDatesSelected = !!availabilityDates;
@@ -459,14 +468,14 @@ export default function Reservations() {
             </div>
 
             {/* Availability notice */}
-            {hasDatesSelected && availability && (availability.unavailableItemIds.length > 0 || availability.unavailableKitIds.length > 0) && (
+            {hasDatesSelected && availability && availability.unavailableItemIds.length > 0 && (
               <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
                 <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
                 <div className="text-xs">
                   <p className="font-medium mb-0.5">Itens indisponíveis para o período selecionado</p>
                   <p className="text-amber-700">
-                    Itens e kits com conflito estão marcados com cadeado e não podem ser selecionados.
-                    Kits que compartilham itens com reservas existentes também ficam bloqueados.
+                    Itens com conflito estão marcados com cadeado. Combos ignoram automaticamente
+                    os itens indisponíveis e adicionam somente o que puder ser reservado.
                   </p>
                 </div>
               </div>
@@ -476,7 +485,7 @@ export default function Reservations() {
               <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800">
                 <Calendar className="h-4 w-4 shrink-0 mt-0.5" />
                 <p className="text-xs">
-                  Selecione as datas de início e fim para ver a disponibilidade dos itens e kits.
+                  Selecione as datas de início e fim para ver a disponibilidade dos itens e combos.
                 </p>
               </div>
             )}
@@ -538,26 +547,23 @@ export default function Reservations() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Kits</Label>
+              <Label>Combos</Label>
               <div className="border rounded-lg max-h-44 overflow-y-auto">
-                {availableKits.length > 0 ? (
-                  availableKits.map((kit) => {
-                    const isUnavailable = hasDatesSelected && availability?.unavailableKitIds?.includes(kit.id);
+                {comboTemplates.length > 0 ? (
+                  comboTemplates.map((kit) => {
+                    const selectableItemIds = getComboSelectableItemIds(kit);
+                    const totalItems = kit.items?.length || 0;
+                    const isUnavailable = selectableItemIds.length === 0;
                     return (
                       <Tooltip key={kit.id}>
                         <TooltipTrigger asChild>
-                          <label
+                          <div
                             className={`flex items-center gap-3 px-3 py-2 transition-colors border-b last:border-b-0 ${
                               isUnavailable
-                                ? "opacity-50 cursor-not-allowed bg-muted/30"
-                                : "hover:bg-muted/50 cursor-pointer"
+                                ? "opacity-60 bg-muted/30"
+                                : "hover:bg-muted/50"
                             }`}
                           >
-                            <Checkbox
-                              checked={form.selectedKitIds.includes(kit.id)}
-                              onCheckedChange={() => toggleKit(kit.id)}
-                              disabled={isUnavailable}
-                            />
                             {isUnavailable ? (
                               <Lock className="h-3.5 w-3.5 text-amber-500" />
                             ) : (
@@ -567,19 +573,24 @@ export default function Reservations() {
                               {kit.name}
                             </span>
                             <span className="text-xs text-muted-foreground ml-auto">
-                              {kit.items?.length || 0} itens
+                              {selectableItemIds.length}/{totalItems} itens
                             </span>
-                            {isUnavailable && (
-                              <Badge variant="outline" className="text-[10px] ml-1 border-amber-300 text-amber-600 px-1.5 py-0">
-                                Indisponível
-                              </Badge>
-                            )}
-                          </label>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => applyCombo(kit)}
+                              disabled={isUnavailable}
+                            >
+                              Adicionar
+                            </Button>
+                          </div>
                         </TooltipTrigger>
                         {isUnavailable && (
                           <TooltipContent side="left">
                             <p className="text-xs">
-                              Kit indisponível: contém itens já reservados no período selecionado
+                              Nenhum item disponível neste combo para o período selecionado
                             </p>
                           </TooltipContent>
                         )}
@@ -588,7 +599,7 @@ export default function Reservations() {
                   })
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-3">
-                    Nenhum kit disponível
+                    Nenhum combo cadastrado
                   </p>
                 )}
               </div>
@@ -708,7 +719,7 @@ export default function Reservations() {
                 detail.reservationItems.length > 0 && (
                   <div>
                     <p className="text-muted-foreground text-xs mb-1.5">
-                      Itens / Kits
+                      Itens
                     </p>
                     <div className="space-y-1">
                       {detail.reservationItems.map((ri: any) => (

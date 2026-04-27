@@ -42,7 +42,7 @@ import { Button } from "./ui/button";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Package, label: "Equipamentos", path: "/items" },
-  { icon: Boxes, label: "Kits", path: "/kits" },
+  { icon: Boxes, label: "Combos", path: "/kits" },
   { icon: Users, label: "Equipe", path: "/team" },
   { icon: CalendarDays, label: "Calendário", path: "/calendar" },
   { icon: ClipboardList, label: "Reservas", path: "/reservations" },

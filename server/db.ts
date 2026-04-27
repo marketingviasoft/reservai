@@ -432,16 +432,18 @@ export async function getReservationById(id: number) {
   return { ...rows[0], reservationItems: resItemsData };
 }
 
-export async function createReservation(data: InsertReservation, itemIds: number[], kitIds: number[]) {
+export async function createReservation(data: InsertReservation, itemIds: number[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const result = await db.insert(reservations).values(data);
   const reservationId = result[0].insertId;
 
-  const resItems: InsertReservationItem[] = [
-    ...itemIds.map((itemId) => ({ reservationId, itemId, kitId: null })),
-    ...kitIds.map((kitId) => ({ reservationId, itemId: null, kitId })),
-  ];
+  const uniqueItemIds = Array.from(new Set(itemIds));
+  const resItems: InsertReservationItem[] = uniqueItemIds.map((itemId) => ({
+    reservationId,
+    itemId,
+    kitId: null,
+  }));
   if (resItems.length > 0) {
     await db.insert(reservationItems).values(resItems);
   }

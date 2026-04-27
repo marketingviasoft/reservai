@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import { COOKIE_NAME } from "../shared/const";
 import type { TrpcContext } from "./_core/context";
+import { assertAdminReservationOperator, assertReservationOwnerOrAdmin } from "./reservationAccess";
+import { buildReservationItemSelection } from "./reservationSelection";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -226,6 +228,31 @@ describe("reservation router - access control", () => {
       caller.reservation.delete({ id: 1 })
     ).rejects.toThrow();
   });
+
+  it("allows reservation owner to update or cancel their own reservation", () => {
+    const user = createMockUser({ role: "user", id: 7 });
+    expect(() => assertReservationOwnerOrAdmin(user, { userId: 7 })).not.toThrow();
+  });
+
+  it("allows admin to update or cancel any reservation", () => {
+    const user = createMockUser({ role: "admin", id: 1 });
+    expect(() => assertReservationOwnerOrAdmin(user, { userId: 7 })).not.toThrow();
+  });
+
+  it("rejects regular user from updating or canceling another user's reservation", () => {
+    const user = createMockUser({ role: "user", id: 2 });
+    expect(() => assertReservationOwnerOrAdmin(user, { userId: 7 })).toThrow();
+  });
+
+  it("rejects regular user from operating check-in and check-out", () => {
+    const user = createMockUser({ role: "user" });
+    expect(() => assertAdminReservationOperator(user)).toThrow();
+  });
+
+  it("allows admin to operate check-in and check-out", () => {
+    const user = createMockUser({ role: "admin" });
+    expect(() => assertAdminReservationOperator(user)).not.toThrow();
+  });
 });
 
 describe("dashboard router - access control", () => {
@@ -312,5 +339,40 @@ describe("reservation.create - shared kit conflict validation", () => {
     } catch (e: any) {
       expect(e.message).not.toContain("FORBIDDEN");
     }
+  });
+});
+
+describe("reservation item selection", () => {
+  it("persists combo selections as physical item ids", () => {
+    const result = buildReservationItemSelection({
+      directItemIds: [1],
+      comboItemIds: [2, 3],
+      unavailableItemIds: [],
+    });
+
+    expect(result.itemIds).toEqual([1, 2, 3]);
+    expect(result.skippedComboItemIds).toEqual([]);
+  });
+
+  it("skips unavailable combo items while keeping available ones", () => {
+    const result = buildReservationItemSelection({
+      directItemIds: [],
+      comboItemIds: [1, 2, 3],
+      unavailableItemIds: [2],
+    });
+
+    expect(result.itemIds).toEqual([1, 3]);
+    expect(result.skippedComboItemIds).toEqual([2]);
+  });
+
+  it("reports unavailable directly selected items as conflicts", () => {
+    const result = buildReservationItemSelection({
+      directItemIds: [1, 2],
+      comboItemIds: [2, 3],
+      unavailableItemIds: [2],
+    });
+
+    expect(result.conflictingDirectItemIds).toEqual([2]);
+    expect(result.itemIds).toEqual([1, 2, 3]);
   });
 });

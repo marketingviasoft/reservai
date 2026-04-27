@@ -59,7 +59,7 @@ export default function Kits() {
       utils.dashboard.stats.invalidate();
       setDialogOpen(false);
       resetForm();
-      toast.success("Kit criado com sucesso");
+      toast.success("Combo criado com sucesso");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -70,7 +70,7 @@ export default function Kits() {
       setDialogOpen(false);
       setEditingId(null);
       resetForm();
-      toast.success("Kit atualizado");
+      toast.success("Combo atualizado");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -80,7 +80,7 @@ export default function Kits() {
       utils.kit.list.invalidate();
       utils.dashboard.stats.invalidate();
       setDeleteId(null);
-      toast.success("Kit removido");
+      toast.success("Combo removido");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -126,9 +126,9 @@ export default function Kits() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Kits</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Combos</h1>
           <p className="text-muted-foreground mt-0.5 text-sm">
-            Agrupamentos de equipamentos para locação conjunta.
+            Atalhos para adicionar grupos de equipamentos ao carrinho de reserva.
           </p>
         </div>
         {isAdmin && (
@@ -141,7 +141,7 @@ export default function Kits() {
             className="gap-2"
           >
             <Plus className="h-4 w-4" />
-            Novo Kit
+            Novo Combo
           </Button>
         )}
       </div>
@@ -149,7 +149,7 @@ export default function Kits() {
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Buscar kits..."
+          placeholder="Buscar combos..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9"
@@ -166,7 +166,7 @@ export default function Kits() {
         <Card className="border-0 shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Boxes className="h-12 w-12 text-muted-foreground/30 mb-3" />
-            <p className="text-muted-foreground font-medium">Nenhum kit encontrado</p>
+            <p className="text-muted-foreground font-medium">Nenhum combo encontrado</p>
           </CardContent>
         </Card>
       ) : (
@@ -289,7 +289,7 @@ export default function Kits() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? "Editar Kit" : "Novo Kit"}</DialogTitle>
+            <DialogTitle>{editingId ? "Editar Combo" : "Novo Combo"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
@@ -297,7 +297,7 @@ export default function Kits() {
               <Input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Nome do kit"
+                placeholder="Nome do combo"
               />
             </div>
             <div className="space-y-1.5">
@@ -305,12 +305,12 @@ export default function Kits() {
               <Textarea
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="Descrição do kit"
+                placeholder="Descrição do combo"
                 rows={2}
               />
             </div>
             <div className="space-y-2">
-              <Label>Itens do Kit</Label>
+              <Label>Itens do Combo</Label>
               <div className="border rounded-lg max-h-60 overflow-y-auto">
                 {allItems && allItems.length > 0 ? (
                   allItems.map((item) => (
@@ -364,9 +364,9 @@ export default function Kits() {
       <AlertDialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir kit?</AlertDialogTitle>
+            <AlertDialogTitle>Excluir combo?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. O kit será removido permanentemente.
+              Esta ação não pode ser desfeita. O combo será removido permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

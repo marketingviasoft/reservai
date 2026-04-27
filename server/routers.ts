@@ -4,6 +4,8 @@ import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_
 import { z } from "zod";
 import * as db from "./db";
 import { storagePut } from "./storage";
+import { assertAdminReservationOperator, assertReservationOwnerOrAdmin } from "./reservationAccess";
+import { buildReservationItemSelection } from "./reservationSelection";
 
 // ─── Category Router ─────────────────────────────────────────────────────────
 const categoryRouter = router({
@@ -172,50 +174,33 @@ const reservationRouter = router({
       kitIds: z.array(z.number()).default([]),
     }))
     .mutation(async ({ ctx, input }) => {
-      // Full availability check with shared-kit resolution
+      // Full availability check with shared-combo resolution.
       const availability = await db.checkAvailability(input.startDate, input.endDate);
+      const comboItemIds = input.kitIds.length > 0 ? await db.getKitItemIds(input.kitIds) : [];
+      const selection = buildReservationItemSelection({
+        directItemIds: input.itemIds,
+        comboItemIds,
+        unavailableItemIds: availability.unavailableItemIds,
+      });
 
-      // Check conflicts for directly selected items
-      if (input.itemIds.length > 0) {
-        const conflictingItems = input.itemIds.filter((id) => availability.unavailableItemIds.includes(id));
-        if (conflictingItems.length > 0) {
+      if (selection.itemIds.length === 0) {
+        throw new Error("Selecione pelo menos um item disponível para reservar");
+      }
+
+      // Directly selected items must be fully available. Combo items are shortcuts:
+      // unavailable combo items are skipped, and available physical items are persisted.
+      if (selection.conflictingDirectItemIds.length > 0) {
           const names = availability.conflicts
-            .filter((c) => conflictingItems.includes(c.itemId))
+          .filter((c) => selection.conflictingDirectItemIds.includes(c.itemId))
             .map((c) => c.itemName || c.itemCode || `Item #${c.itemId}`)
             .filter((v, i, a) => a.indexOf(v) === i);
           throw new Error(`Conflito de reserva para os itens: ${names.join(", ")}`);
-        }
-      }
-
-      // Check conflicts for kits (including shared-item resolution)
-      if (input.kitIds.length > 0) {
-        const conflictingKits = input.kitIds.filter((id) => availability.unavailableKitIds.includes(id));
-        if (conflictingKits.length > 0) {
-          // Get kit names for error message
-          const kitNames: string[] = [];
-          for (const kitId of conflictingKits) {
-            const kit = await db.getKitById(kitId);
-            kitNames.push(kit?.name || `Kit #${kitId}`);
-          }
-          throw new Error(`Conflito: kits indisponíveis (itens compartilhados já reservados): ${kitNames.join(", ")}`);
-        }
-        // Also check if any item inside selected kits conflicts with directly selected items
-        const kitItemIds = await db.getKitItemIds(input.kitIds);
-        const conflictingKitItems = kitItemIds.filter((id) => availability.unavailableItemIds.includes(id));
-        if (conflictingKitItems.length > 0) {
-          const names = availability.conflicts
-            .filter((c) => conflictingKitItems.includes(c.itemId))
-            .map((c) => c.itemName || c.itemCode || `Item #${c.itemId}`)
-            .filter((v, i, a) => a.indexOf(v) === i);
-          throw new Error(`Conflito: itens do kit já reservados: ${names.join(", ")}`);
-        }
       }
 
       // Reserva é atrelada ao colaborador logado (ctx.user.id)
       return db.createReservation(
         { userId: ctx.user.id, startDate: input.startDate, endDate: input.endDate, notes: input.notes, status: "pendente" },
-        input.itemIds,
-        input.kitIds
+        selection.itemIds
       );
     }),
   update: protectedProcedure
@@ -226,15 +211,22 @@ const reservationRouter = router({
       status: z.enum(["pendente", "ativa", "concluida", "cancelada"]).optional(),
       notes: z.string().optional(),
     }))
-    .mutation(({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      const reservation = await db.getReservationById(input.id);
+      if (!reservation) throw new Error("Reserva não encontrada");
+      assertReservationOwnerOrAdmin(ctx.user, reservation);
+      if (ctx.user.role !== "admin" && input.status !== undefined) {
+        throw new Error("Apenas administradores podem alterar o status da reserva");
+      }
       const { id, ...data } = input;
       return db.updateReservation(id, data);
     }),
   cancel: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const reservation = await db.getReservationById(input.id);
       if (!reservation) throw new Error("Reserva não encontrada");
+      assertReservationOwnerOrAdmin(ctx.user, reservation);
       await db.updateReservation(input.id, { status: "cancelada" });
       if (reservation.status === "ativa") {
         for (const ri of reservation.reservationItems) {
@@ -245,6 +237,7 @@ const reservationRouter = router({
   checkout: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      assertAdminReservationOperator(ctx.user);
       const reservation = await db.getReservationById(input.id);
       if (!reservation) throw new Error("Reserva não encontrada");
       if (reservation.status !== "pendente") throw new Error("Apenas reservas pendentes podem ter check-out");
@@ -268,6 +261,7 @@ const reservationRouter = router({
   checkin: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      assertAdminReservationOperator(ctx.user);
       const reservation = await db.getReservationById(input.id);
       if (!reservation) throw new Error("Reserva não encontrada");
       if (reservation.status !== "ativa") throw new Error("Apenas reservas ativas podem ter check-in");

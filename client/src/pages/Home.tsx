@@ -138,7 +138,7 @@ export default function Home() {
       {!statsLoading && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard
-            title="Kits"
+            title="Combos"
             value={stats?.totalKits ?? 0}
             icon={Boxes}
           />
