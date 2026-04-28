@@ -1,6 +1,6 @@
 # HANDOFF - ReservAI
 
-_Ultima atualizacao: 2026-04-24_
+_Ultima atualizacao: 2026-04-28_
 
 ## 1. Visao Geral do Projeto
 
@@ -29,6 +29,18 @@ Estrutura principal:
 - `server/_core/`: bootstrap do servidor, autenticacao Supabase, contexto, helpers herdados do template.
 - `drizzle/`: schema, relacoes e migrations SQL.
 - `shared/`: constantes e tipos compartilhados.
+- `docs/`: documentacao de baseline, banco, regras de negocio e fluxos.
+
+### Baseline tecnico de 2026-04-28
+
+Comandos validados:
+
+- `corepack pnpm install`: concluido. No sandbox do agente houve `EPERM` ao recriar `node_modules`; fora do sandbox a instalacao concluiu usando o store local.
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou fora do sandbox, com 2 arquivos e 32 testes.
+- `corepack pnpm build`: passou fora do sandbox. O build gerou frontend Vite, bundle server em `dist/index.js` e bundle Vercel em `api/index.js`; houve apenas alerta nao bloqueante de chunk frontend acima de 500 kB.
+
+Nenhuma migracao de banco ou alteracao de regra de negocio foi feita neste baseline.
 
 ### Frontend implementado
 
@@ -92,23 +104,25 @@ Pontos aderentes:
 - reserva por periodo;
 - fluxo de check-out/check-in separado da criacao da reserva;
 - historico basico por status de reserva;
-- bloqueio de double-booking por item e por kit compartilhado.
+- bloqueio de double-booking por item e por kit compartilhado;
+- `checkout` e `checkin` restritos a admin;
+- `update` e `cancel` de reserva restritos ao dono da reserva ou admin;
+- criacao de reserva persistindo itens fisicos individuais em `reservation_items.itemId`.
 
 Pontos ainda desalinhados:
 
-- o produto atual ainda trata `kits` como entidade forte de dominio, enquanto a regra alvo pede **carrinho de itens avulsos** com **templates/combos apenas como atalho**;
-- `reservation_items` aceita `itemId` ou `kitId`, o que reforca o modelo de kit rigido;
+- o produto ainda mantem a tela e a entidade `kits`, enquanto a regra alvo pede **templates/combos apenas como atalho**;
+- `reservation_items` ainda aceita `kitId` no schema por compatibilidade, embora o fluxo atual de criacao persista itens fisicos em `itemId`;
 - nao existe entidade especifica de `template/combo`;
 - nao existe trilha de auditoria detalhada de eventos, apenas timestamps principais na reserva;
-- nao existe etapa explicita de aprovacao entre "pendente" e "ativa";
-- algumas mutacoes de reserva estao permissivas demais para usuarios nao-admin.
+- nao existe etapa explicita de aprovacao entre "pendente" e "ativa".
 
 ### Riscos tecnicos e observacoes importantes
 
-- O repositorio ainda carrega artefatos do template anterior, principalmente em `server/_core/*` e componentes utilitarios como `AIChatBox`, `ManusDialog`, `Map` e `ComponentShowcase`. Eles nao fazem parte do fluxo central do ReservAI.
+- O repositorio ainda carrega alguns artefatos do template anterior, principalmente em `server/_core/*`, `client/public/__manus__/*` e plugins Manus no `vite.config.ts`. Eles sustentam parte do bootstrap atual, mas nao fazem parte do dominio central do ReservAI.
 - A tela e o backend de `Kits` funcionam, mas representam uma decisao de produto que provavelmente precisara ser revisada para alinhar ao modelo final de combos/templates.
-- O controle de acesso esta incompleto no dominio de reservas: hoje `cancel`, `update`, `checkout` e `checkin` usam apenas `protectedProcedure`, sem diferenciar claramente acoes de admin/logistica versus colaborador comum.
-- Nao consegui validar os testes nem o typecheck localmente neste workspace porque `node_modules` nao esta instalado e `pnpm` nao esta disponivel no ambiente atual. O arquivo `todo.md` afirma que a base estava com `24 testes` passando e sem erros de TypeScript na origem anterior.
+- O controle de acesso de reservas foi endurecido no estado atual: `cancel` e `update` validam dono/admin, e `checkout`/`checkin` exigem admin. Ainda falta decidir se havera papel operacional separado de admin.
+- O build passa, mas o Vite alerta que o bundle frontend principal passa de 500 kB apos minificacao. Isso nao bloqueia deploy, mas pode virar pauta de otimizacao.
 
 ## 3. Stack Tecnologico
 
@@ -189,7 +203,8 @@ Estado atual no codigo:
 - o banco usa `role = "admin" | "user"`;
 - `user` deve ser interpretado como o papel de colaborador;
 - itens, categorias e kits ja estao protegidos para admin nas mutacoes;
-- reservas ainda precisam de endurecimento de permissao.
+- reservas validam dono/admin para `update` e `cancel`;
+- check-out e check-in exigem admin.
 
 ### Modelo de reserva alvo
 
@@ -201,8 +216,9 @@ Regra alvo:
 
 Estado atual:
 
-- o sistema permite reservar itens avulsos e tambem kits;
-- isso resolve parte do problema operacional, mas ainda nao representa o modelo alvo de carrinho puro.
+- o sistema permite reservar itens avulsos e usar kits como atalho de selecao;
+- a reserva criada persiste os itens fisicos finais em `reservation_items.itemId`;
+- a entidade `kits` ainda existe e precisa de decisao de produto antes de evoluir para templates/combos formais.
 
 ### Templates / combos
 
@@ -214,8 +230,8 @@ Regra alvo:
 Estado atual:
 
 - o conceito mais proximo e `kits`;
-- porem `kits` hoje sao entidades persistidas e reservaveis diretamente, nao apenas atalhos;
-- isso deve evoluir para `templates` ou `combos` desacoplados da reserva fisica.
+- no fluxo de criacao de reserva, os itens do kit sao expandidos, itens indisponiveis vindos do kit sao pulados e itens disponiveis sao persistidos como itens fisicos;
+- isso deve evoluir para `templates` ou `combos` desacoplados da entidade historica `kits`.
 
 ### Sistema anti-conflito
 
@@ -394,8 +410,9 @@ Campos principais:
 
 Observacao importante:
 
-- hoje a modelagem aceita item avulso **ou** kit por linha;
-- isso funciona para o estado atual, mas nao e o formato ideal para o modelo final de carrinho + templates.
+- a modelagem ainda aceita `itemId` **ou** `kitId` por linha;
+- o fluxo atual de criacao grava itens fisicos em `itemId`;
+- `kitId` permanece no schema por compatibilidade, mas nao deve ser a unidade final de bloqueio em novas melhorias.
 
 ### Leitura arquitetural do dominio
 
@@ -432,15 +449,15 @@ Opcional, mas fortemente recomendado:
 ### Prioridade 1 - alinhar dominio ao negocio final
 
 - Decidir oficialmente se `kits` serao mantidos apenas como compatibilidade temporaria ou migrados para `templates/combos`.
-- Refatorar a experiencia de reserva para carrinho puro de itens.
-- Fazer com que combos apenas adicionem itens disponiveis ao carrinho, com aviso dos indisponiveis.
-- Revisar `reservation_items` para persistir somente itens fisicos individuais.
+- Consolidar a experiencia de reserva como carrinho puro de itens.
+- Expor melhor na UI quando combos/kits pularem itens indisponiveis.
+- Planejar migracao de schema para remover dependencia de `kitId` em `reservation_items`, se a decisao de produto confirmar templates/combos.
 
 ### Prioridade 2 - endurecer seguranca e RBAC
 
-- Restringir `checkout` e `checkin` a perfis autorizados (`admin` e/ou um futuro papel operacional).
-- Restringir `update` e `cancel` de reserva para o dono da reserva e administradores.
+- Decidir se `admin` continua sendo o unico papel operacional para check-in/check-out ou se havera um papel de logistica.
 - Revisar quais leituras um colaborador comum pode fazer: tudo, somente reservas proprias, ou visao interna global.
+- Expandir testes de permissao com cenarios integrados de reserva.
 
 ### Prioridade 3 - fortalecer a trilha de auditoria
 
@@ -456,17 +473,17 @@ Opcional, mas fortemente recomendado:
 
 ### Prioridade 5 - higiene tecnica do repositorio
 
-- Instalar dependencias e revalidar `test` e `check`.
-- Criar `README.md` enxuto para onboarding tecnico e manter este `HANDOFF.md` como documento de produto/arquitetura.
+- Manter `README.md`, `HANDOFF.md` e `docs/` sincronizados com mudancas de dominio.
 - Identificar e remover artefatos do template anterior que nao agregam ao ReservAI.
-- Adicionar testes de dominio para RBAC de reservas, carrinho, templates e auditoria.
+- Avaliar code splitting para reduzir o alerta de chunk grande no build.
+- Adicionar testes de dominio para carrinho, templates e auditoria.
 
 ### Recomendacao pratica para a proxima sprint
 
 Se precisarmos continuar o desenvolvimento agora, a ordem mais segura e:
 
-1. travar as regras de permissao de reserva e operacao;
-2. substituir `kits` por `templates/combos` no fluxo de reserva;
-3. migrar a persistencia para item fisico individual como unidade final de bloqueio;
+1. decidir oficialmente o destino de `kits` versus `templates/combos`;
+2. consolidar a UI de reserva como carrinho de itens fisicos;
+3. planejar migracao para remover `kitId` de `reservation_items`, se aplicavel;
 4. adicionar auditoria completa de eventos;
 5. expandir testes automatizados antes de novas features cosmeticas.
