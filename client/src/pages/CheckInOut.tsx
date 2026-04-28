@@ -31,6 +31,11 @@ import {
 import { useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import {
+  isCheckinEligibleStatus,
+  isCheckoutEligibleStatus,
+  isOperationalHistoryStatus,
+} from "@shared/operationalViews";
 
 export default function CheckInOut() {
   const { user } = useAuth();
@@ -48,6 +53,19 @@ export default function CheckInOut() {
     trpc.reservation.list.useQuery({ status: "ativa" }, { enabled: isAdmin });
   const { data: completedReservations, isLoading: completedLoading } =
     trpc.reservation.list.useQuery({ status: "concluida" }, { enabled: isAdmin });
+
+  const checkoutReservations =
+    pendingReservations?.filter((reservation) =>
+      isCheckoutEligibleStatus(reservation.status)
+    ) ?? [];
+  const checkinReservations =
+    activeReservations?.filter((reservation) =>
+      isCheckinEligibleStatus(reservation.status)
+    ) ?? [];
+  const historyReservations =
+    completedReservations?.filter((reservation) =>
+      isOperationalHistoryStatus(reservation.status)
+    ) ?? [];
 
   const checkoutMutation = trpc.reservation.checkout.useMutation({
     onSuccess: () => {
@@ -248,18 +266,18 @@ export default function CheckInOut() {
           <TabsTrigger value="checkout" className="gap-2">
             <LogOut className="h-4 w-4" />
             Check-out
-            {pendingReservations && pendingReservations.length > 0 && (
+            {checkoutReservations.length > 0 && (
               <Badge variant="secondary" className="ml-1 h-5 min-w-5 p-0 flex items-center justify-center text-xs">
-                {pendingReservations.length}
+                {checkoutReservations.length}
               </Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="checkin" className="gap-2">
             <LogIn className="h-4 w-4" />
             Check-in
-            {activeReservations && activeReservations.length > 0 && (
+            {checkinReservations.length > 0 && (
               <Badge variant="secondary" className="ml-1 h-5 min-w-5 p-0 flex items-center justify-center text-xs">
-                {activeReservations.length}
+                {checkinReservations.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -290,7 +308,7 @@ export default function CheckInOut() {
                 <Skeleton key={i} className="h-32 rounded-xl" />
               ))}
             </div>
-          ) : !pendingReservations || pendingReservations.length === 0 ? (
+          ) : checkoutReservations.length === 0 ? (
             <Card className="border-0 shadow-sm">
               <CardContent className="flex flex-col items-center justify-center py-16">
                 <CheckCircle2 className="h-12 w-12 text-emerald-400/50 mb-3" />
@@ -300,7 +318,7 @@ export default function CheckInOut() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {pendingReservations.map((r) => (
+              {checkoutReservations.map((r) => (
                 <ReservationCard key={r.id} reservation={r} type="checkout" />
               ))}
             </div>
@@ -328,7 +346,7 @@ export default function CheckInOut() {
                 <Skeleton key={i} className="h-32 rounded-xl" />
               ))}
             </div>
-          ) : !activeReservations || activeReservations.length === 0 ? (
+          ) : checkinReservations.length === 0 ? (
             <Card className="border-0 shadow-sm">
               <CardContent className="flex flex-col items-center justify-center py-16">
                 <CheckCircle2 className="h-12 w-12 text-emerald-400/50 mb-3" />
@@ -338,7 +356,7 @@ export default function CheckInOut() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {activeReservations.map((r) => (
+              {checkinReservations.map((r) => (
                 <ReservationCard key={r.id} reservation={r} type="checkin" />
               ))}
             </div>
@@ -366,7 +384,7 @@ export default function CheckInOut() {
                 <Skeleton key={i} className="h-24 rounded-xl" />
               ))}
             </div>
-          ) : !completedReservations || completedReservations.length === 0 ? (
+          ) : historyReservations.length === 0 ? (
             <Card className="border-0 shadow-sm">
               <CardContent className="flex flex-col items-center justify-center py-16">
                 <History className="h-12 w-12 text-gray-300 mb-3" />
@@ -378,7 +396,7 @@ export default function CheckInOut() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {completedReservations.map((r) => (
+              {historyReservations.map((r) => (
                 <HistoryCard key={r.id} reservation={r} />
               ))}
             </div>

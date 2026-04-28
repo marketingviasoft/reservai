@@ -320,6 +320,30 @@ function buildReservationItemSelection({
 // shared/reservationStatus.ts
 var RESERVATION_BLOCKING_STATUSES = ["pendente", "ativa"];
 
+// shared/operationalViews.ts
+function emptyDashboardStats() {
+  return {
+    totalItems: 0,
+    availableItems: 0,
+    lentItems: 0,
+    maintenanceItems: 0,
+    lostItems: 0,
+    totalKits: 0,
+    totalUsers: 0,
+    activeReservations: 0,
+    pendingReservations: 0,
+    completedReservations: 0,
+    canceledReservations: 0,
+    overdueReservations: 0
+  };
+}
+function buildDashboardStatsFromCounts(input) {
+  return {
+    ...emptyDashboardStats(),
+    ...input
+  };
+}
+
 // server/db.ts
 function generateItemCode() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -808,43 +832,53 @@ async function checkKitConflicts(kitIds, startDate, endDate, excludeReservationI
   }
   return kitConflicts;
 }
-async function getDashboardStats() {
+async function getDashboardStats(userId) {
   const db = await getDb();
-  if (!db) return { totalItems: 0, availableItems: 0, lentItems: 0, maintenanceItems: 0, totalKits: 0, totalUsers: 0, activeReservations: 0, pendingReservations: 0, overdueReservations: 0 };
+  if (!db) return emptyDashboardStats();
   const now = Date.now();
+  const reservationScope = userId ? eq(reservations.userId, userId) : void 0;
+  const scopedReservationWhere = (...conditions) => reservationScope ? and(reservationScope, ...conditions) : and(...conditions);
   const [
     [itemStats],
     [kitStats],
     [userStats],
     [activeRes],
     [pendingRes],
+    [completedRes],
+    [canceledRes],
     [overdueRes]
   ] = await Promise.all([
     db.select({
       total: count(),
       available: sql`SUM(CASE WHEN ${items.status} = 'disponivel' THEN 1 ELSE 0 END)`,
       lent: sql`SUM(CASE WHEN ${items.status} = 'emprestado' THEN 1 ELSE 0 END)`,
-      maintenance: sql`SUM(CASE WHEN ${items.status} = 'manutencao' THEN 1 ELSE 0 END)`
+      maintenance: sql`SUM(CASE WHEN ${items.status} = 'manutencao' THEN 1 ELSE 0 END)`,
+      lost: sql`SUM(CASE WHEN ${items.status} = 'extraviado' THEN 1 ELSE 0 END)`
     }).from(items),
     db.select({ total: count() }).from(kits),
     db.select({ total: count() }).from(users),
-    db.select({ total: count() }).from(reservations).where(eq(reservations.status, "ativa")),
-    db.select({ total: count() }).from(reservations).where(eq(reservations.status, "pendente")),
-    db.select({ total: count() }).from(reservations).where(and(eq(reservations.status, "ativa"), lte(reservations.endDate, now)))
+    db.select({ total: count() }).from(reservations).where(scopedReservationWhere(eq(reservations.status, "ativa"))),
+    db.select({ total: count() }).from(reservations).where(scopedReservationWhere(eq(reservations.status, "pendente"))),
+    db.select({ total: count() }).from(reservations).where(scopedReservationWhere(eq(reservations.status, "concluida"))),
+    db.select({ total: count() }).from(reservations).where(scopedReservationWhere(eq(reservations.status, "cancelada"))),
+    db.select({ total: count() }).from(reservations).where(scopedReservationWhere(eq(reservations.status, "ativa"), lte(reservations.endDate, now)))
   ]);
-  return {
+  return buildDashboardStatsFromCounts({
     totalItems: itemStats?.total ?? 0,
     availableItems: Number(itemStats?.available ?? 0),
     lentItems: Number(itemStats?.lent ?? 0),
     maintenanceItems: Number(itemStats?.maintenance ?? 0),
+    lostItems: Number(itemStats?.lost ?? 0),
     totalKits: kitStats?.total ?? 0,
     totalUsers: userStats?.total ?? 0,
     activeReservations: activeRes?.total ?? 0,
     pendingReservations: pendingRes?.total ?? 0,
+    completedReservations: completedRes?.total ?? 0,
+    canceledReservations: canceledRes?.total ?? 0,
     overdueReservations: overdueRes?.total ?? 0
-  };
+  });
 }
-async function getRecentReservations(limit = 10) {
+async function getRecentReservations(limit = 10, userId) {
   const db = await getDb();
   if (!db) return [];
   return db.select({
@@ -855,12 +889,14 @@ async function getRecentReservations(limit = 10) {
     endDate: reservations.endDate,
     status: reservations.status,
     notes: reservations.notes
-  }).from(reservations).leftJoin(users, eq(reservations.userId, users.id)).orderBy(desc(reservations.createdAt)).limit(limit);
+  }).from(reservations).leftJoin(users, eq(reservations.userId, users.id)).where(userId ? eq(reservations.userId, userId) : void 0).orderBy(desc(reservations.createdAt)).limit(limit);
 }
-async function getOverdueReservations() {
+async function getOverdueReservations(userId) {
   const db = await getDb();
   if (!db) return [];
   const now = Date.now();
+  const conditions = [eq(reservations.status, "ativa"), lte(reservations.endDate, now)];
+  if (userId) conditions.push(eq(reservations.userId, userId));
   return db.select({
     id: reservations.id,
     userName: users.name,
@@ -868,7 +904,7 @@ async function getOverdueReservations() {
     startDate: reservations.startDate,
     endDate: reservations.endDate,
     status: reservations.status
-  }).from(reservations).leftJoin(users, eq(reservations.userId, users.id)).where(and(eq(reservations.status, "ativa"), lte(reservations.endDate, now))).orderBy(asc(reservations.endDate));
+  }).from(reservations).leftJoin(users, eq(reservations.userId, users.id)).where(and(...conditions)).orderBy(asc(reservations.endDate));
 }
 async function getKitItemIds(kitIds) {
   const db = await getDb();
@@ -1373,9 +1409,18 @@ var reservationRouter = router({
   delete: adminProcedure.input(z.object({ id: z.number() })).mutation(({ input }) => deleteReservation(input.id))
 });
 var dashboardRouter = router({
-  stats: protectedProcedure.query(() => getDashboardStats()),
-  recentReservations: protectedProcedure.input(z.object({ limit: z.number().default(10) }).optional()).query(({ input }) => getRecentReservations(input?.limit ?? 10)),
-  overdueReservations: protectedProcedure.query(() => getOverdueReservations())
+  stats: protectedProcedure.query(
+    ({ ctx }) => getDashboardStats(ctx.user.role === "admin" ? void 0 : ctx.user.id)
+  ),
+  recentReservations: protectedProcedure.input(z.object({ limit: z.number().default(10) }).optional()).query(
+    ({ ctx, input }) => getRecentReservations(
+      input?.limit ?? 10,
+      ctx.user.role === "admin" ? void 0 : ctx.user.id
+    )
+  ),
+  overdueReservations: protectedProcedure.query(
+    ({ ctx }) => getOverdueReservations(ctx.user.role === "admin" ? void 0 : ctx.user.id)
+  )
 });
 var appRouter = router({
   auth: router({

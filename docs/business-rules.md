@@ -53,7 +53,20 @@ No banco, o papel `user` representa o colaborador comum.
 - Reservas `pendente` e `ativa` bloqueiam disponibilidade.
 - Ha checagem de sobreposicao por periodo.
 - O bloqueio considera equipamentos fisicos por `itemId`.
+- Reservas `concluida` e `cancelada` nao bloqueiam disponibilidade.
 - Combos ficam indisponiveis parcialmente ou totalmente conforme a disponibilidade dos itens fisicos que os compoem.
+
+## Visões operacionais
+
+- Dashboard conta equipamentos fisicos somente a partir de `items`.
+- Combos/kits podem ser exibidos como quantidade de atalhos, mas nao entram em total de equipamentos fisicos.
+- Metricas de equipamentos usam `items.status`: `disponivel`, `emprestado`, `manutencao`, `extraviado`.
+- `items.condition` nao deve alimentar metricas logisticas de disponibilidade.
+- Metricas/listas de reservas do Dashboard respeitam escopo: admin ve a operacao completa; colaborador ve as proprias reservas.
+- Calendario usa a mesma listagem protegida de reservas: admin ve todas; colaborador ve apenas as proprias.
+- Check-out lista e opera somente reservas `pendente`.
+- Check-in lista e opera somente reservas `ativa`.
+- Historico operacional de check-in/check-out lista reservas `concluida`; reservas canceladas nao representam retirada/devolucao.
 
 ## Check-out e check-in
 

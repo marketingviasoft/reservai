@@ -11,7 +11,13 @@
 
 1. Usuario autenticado acessa `/`.
 2. Frontend consulta metricas em `dashboard.stats`.
-3. Tambem existem consultas para reservas recentes e reservas atrasadas.
+3. Total de equipamentos fisicos vem somente de `items`.
+4. Combos sao exibidos como atalhos cadastrados, sem entrar no total de equipamentos fisicos.
+5. Metricas de equipamentos usam `items.status`, nao `items.condition`.
+6. Metricas de reservas exibem pendentes, ativas, concluidas, canceladas e atrasadas.
+7. Admin ve metricas/listas da operacao completa.
+8. Colaborador ve metricas/listas de reservas restritas ao proprio usuario.
+9. Tambem existem consultas para reservas recentes e reservas atrasadas.
 
 ## Equipamentos
 
@@ -69,22 +75,24 @@
 
 1. Somente admin acessa a operacao de check-out na UI.
 2. Backend tambem exige admin para executar check-out.
-3. Admin executa check-out em uma reserva `pendente`.
-4. Reserva passa para `ativa`.
-5. Backend registra data e usuario operador.
-6. Itens da reserva passam para `emprestado`.
-7. Backend registra `reservation_checked_out` com ator, transicao de status e itens movimentados.
+3. A lista de check-out exibe somente reservas `pendente`.
+4. Admin executa check-out em uma reserva `pendente`.
+5. Reserva passa para `ativa`.
+6. Backend registra data e usuario operador.
+7. Itens da reserva passam para `emprestado`.
+8. Backend registra `reservation_checked_out` com ator, transicao de status e itens movimentados.
 
 ## Check-in
 
 1. Somente admin acessa a operacao de check-in na UI.
 2. Backend tambem exige admin para executar check-in.
-3. Admin executa check-in em uma reserva `ativa`.
-4. Reserva passa para `concluida`.
-5. Backend registra data e usuario operador.
-6. Itens da reserva voltam para `disponivel`.
-7. Compatibilidade legada ainda recalcula combos caso uma reserva antiga tenha `kitId`, mas novas reservas movimentam apenas itens fisicos.
-8. Backend registra `reservation_checked_in` com ator, transicao de status e itens devolvidos.
+3. A lista de check-in exibe somente reservas `ativa`.
+4. Admin executa check-in em uma reserva `ativa`.
+5. Reserva passa para `concluida`.
+6. Backend registra data e usuario operador.
+7. Itens da reserva voltam para `disponivel`.
+8. Compatibilidade legada ainda recalcula combos caso uma reserva antiga tenha `kitId`, mas novas reservas movimentam apenas itens fisicos.
+9. Backend registra `reservation_checked_in` com ator, transicao de status e itens devolvidos.
 
 ## Timeline de auditoria
 
@@ -100,4 +108,8 @@
 
 1. Usuario acessa `/calendar`.
 2. Frontend exibe reservas por periodo.
-3. A tela oferece atalhos para visualizar ou criar reservas conforme o fluxo atual.
+3. A consulta usa o mesmo endpoint protegido da lista de reservas.
+4. Admin visualiza todas as reservas no periodo.
+5. Colaborador visualiza somente as proprias reservas no periodo.
+6. Reservas sao diferenciadas visualmente por status.
+7. Eventos do calendario levam ao detalhe da reserva; dias vazios permitem iniciar uma nova reserva.

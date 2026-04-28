@@ -46,11 +46,11 @@ Nenhuma migracao de banco ou alteracao de regra de negocio foi feita neste basel
 
 Telas principais ja existentes:
 
-- `Dashboard`: metricas de itens, reservas, atrasos, equipe, combos e manutencao.
+- `Dashboard`: metricas de equipamentos fisicos, status operacional, reservas por status, atrasos, equipe e combos.
 - `Equipamentos`: CRUD com marca, modelo, categoria, foto, numero de serie, patrimonio, estado de conservacao, observacoes, filtros e busca.
 - `Combos`: CRUD de agrupamentos reutilizaveis de itens, usados como atalhos de selecao.
 - `Equipe`: listagem de usuarios, edicao de perfil, alteracao de role por admin e historico de reservas por usuario.
-- `Calendario`: visao dia/semana/mes com reservas por periodo e atalho para criar nova reserva.
+- `Calendario`: visao dia/semana/mes com reservas por periodo, diferenciacao por status, abertura do detalhe e atalho para criar nova reserva.
 - `Reservas`: listagem, filtro por status, criacao de reserva, detalhes e cancelamento.
 - `Check-in / Check-out`: operacao de retirada, devolucao e historico.
 
@@ -67,7 +67,7 @@ Rotas tRPC existentes:
 - `profile`: listagem de usuarios, edicao de perfil, alteracao de role e historico
 - `reservation`: listagem, detalhe, criacao, atualizacao, cancelamento, check-out, check-in, checagem de conflitos e disponibilidade
 - `reservation.events`: timeline de auditoria da reserva, com leitura protegida por dono/admin
-- `dashboard`: metricas, reservas recentes e atrasadas
+- `dashboard`: metricas, reservas recentes e atrasadas, com escopo de reserva por papel
 
 O backend ja possui:
 
@@ -112,6 +112,7 @@ Pontos aderentes:
 - `cancel` restrito a reservas pendentes; reservas ativas devem ser encerradas via check-in;
 - criacao de reserva persistindo itens fisicos individuais em `reservation_items.itemId`;
 - cadastro de equipamento separando `status` operacional de `condition` fisica.
+- visoes operacionais revisadas: Dashboard conta equipamentos fisicos por `items`, calendario/listas respeitam escopo admin/dono, check-out lista `pendente` e check-in lista `ativa`.
 
 Pontos ainda desalinhados:
 
@@ -125,6 +126,7 @@ Pontos ainda desalinhados:
 - O repositorio ainda carrega alguns artefatos do template anterior, principalmente em `server/_core/*`, `client/public/__manus__/*` e plugins Manus no `vite.config.ts`. Eles sustentam parte do bootstrap atual, mas nao fazem parte do dominio central do ReservAI.
 - A tela e o backend de Combos ainda usam a tabela tecnica `kits` por compatibilidade. A regra atual e que combo nao e reservavel diretamente.
 - O controle de acesso de reservas foi endurecido no estado atual: colaborador ve apenas reservas proprias, `cancel` e `update` validam dono/status, `checkout`/`checkin` exigem admin. Reserva ativa nao pode ser cancelada; deve passar por check-in. Ainda falta decidir se havera papel operacional separado de admin.
+- O Dashboard exibe `totalKits` apenas como quantidade de combos/atalhos cadastrados; essa metrica nao representa equipamento fisico.
 - O build passa, mas o Vite alerta que o bundle frontend principal passa de 500 kB apos minificacao. Isso nao bloqueia deploy, mas pode virar pauta de otimizacao.
 
 ## 3. Stack Tecnologico
@@ -294,8 +296,23 @@ Regra alvo:
 Estado atual:
 
 - implementado;
+- a tela administrativa de check-out lista apenas reservas `pendente`;
+- a tela administrativa de check-in lista apenas reservas `ativa`;
 - `pendente -> ativa` no check-out, com itens indo para `emprestado`;
 - `ativa -> concluida` no check-in, com itens voltando para `disponivel`.
+
+### Visões operacionais
+
+Estado atual:
+
+- Dashboard conta equipamentos fisicos somente pela tabela `items`;
+- `totalKits` aparece como quantidade de combos/atalhos, separado do total fisico;
+- metricas de equipamentos usam `items.status` e nao `items.condition`;
+- Dashboard mostra reservas `pendente`, `ativa`, `concluida`, `cancelada` e atrasadas;
+- metricas/listas de reservas do Dashboard sao globais para admin e restritas ao proprio usuario para colaborador;
+- Calendario usa `reservation.list`, portanto herda o mesmo escopo admin/dono da lista de reservas;
+- eventos do calendario abrem o detalhe da reserva;
+- timeline de auditoria no detalhe tolera reservas antigas sem eventos.
 
 ### Historico e rastreabilidade
 

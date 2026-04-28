@@ -125,6 +125,15 @@ export default function Reservations() {
   useEffect(() => {
     const params = new URLSearchParams(searchString);
     const newFrom = params.get("newFrom");
+    const detailParam = params.get("detail");
+    if (detailParam) {
+      const id = parseInt(detailParam, 10);
+      if (!isNaN(id)) {
+        setDetailId(id);
+      }
+      window.history.replaceState({}, "", window.location.pathname);
+      return;
+    }
     if (newFrom) {
       const ts = parseInt(newFrom, 10);
       if (!isNaN(ts)) {

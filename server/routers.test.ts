@@ -24,6 +24,13 @@ import {
   buildReservationEventDescription,
   hasReservationEvents,
 } from "../shared/reservationEvents";
+import {
+  buildDashboardStatsFromCounts,
+  canViewReservationInOperationalViews,
+  isCheckinEligibleStatus,
+  isCheckoutEligibleStatus,
+  isOperationalHistoryStatus,
+} from "../shared/operationalViews";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -554,6 +561,88 @@ describe("reservation availability status rules", () => {
   it("does not block availability for canceled or concluded reservations", () => {
     expect(isReservationBlockingAvailability("cancelada")).toBe(false);
     expect(isReservationBlockingAvailability("concluida")).toBe(false);
+  });
+});
+
+describe("operational views domain rules", () => {
+  it("keeps dashboard physical equipment totals separate from combos", () => {
+    const stats = buildDashboardStatsFromCounts({
+      totalItems: 12,
+      totalKits: 3,
+    });
+
+    expect(stats.totalItems).toBe(12);
+    expect(stats.totalKits).toBe(3);
+  });
+
+  it("counts dashboard equipment by item operational status", () => {
+    const stats = buildDashboardStatsFromCounts({
+      availableItems: 5,
+      lentItems: 4,
+      maintenanceItems: 2,
+      lostItems: 1,
+    });
+
+    expect(stats.availableItems).toBe(5);
+    expect(stats.lentItems).toBe(4);
+    expect(stats.maintenanceItems).toBe(2);
+    expect(stats.lostItems).toBe(1);
+  });
+
+  it("does not model physical condition as a dashboard operational status", () => {
+    const stats = buildDashboardStatsFromCounts({
+      totalItems: 4,
+      maintenanceItems: 1,
+    });
+
+    expect(stats).not.toHaveProperty("damagedItems");
+    expect(stats).not.toHaveProperty("regularItems");
+    expect(stats.maintenanceItems).toBe(1);
+  });
+
+  it("marks only pending reservations as checkout eligible", () => {
+    expect(isCheckoutEligibleStatus("pendente")).toBe(true);
+    expect(isCheckoutEligibleStatus("ativa")).toBe(false);
+    expect(isCheckoutEligibleStatus("concluida")).toBe(false);
+    expect(isCheckoutEligibleStatus("cancelada")).toBe(false);
+  });
+
+  it("marks only active reservations as checkin eligible", () => {
+    expect(isCheckinEligibleStatus("ativa")).toBe(true);
+    expect(isCheckinEligibleStatus("pendente")).toBe(false);
+    expect(isCheckinEligibleStatus("concluida")).toBe(false);
+    expect(isCheckinEligibleStatus("cancelada")).toBe(false);
+  });
+
+  it("uses concluded reservations as check-in/check-out operation history", () => {
+    expect(isOperationalHistoryStatus("concluida")).toBe(true);
+    expect(isOperationalHistoryStatus("cancelada")).toBe(false);
+  });
+
+  it("keeps reservation list visibility scoped by role", () => {
+    const collaborator = createMockUser({ role: "user", id: 7 });
+    const admin = createMockUser({ role: "admin", id: 1 });
+
+    expect(
+      canViewReservationInOperationalViews(collaborator, { userId: 7 })
+    ).toBe(true);
+    expect(
+      canViewReservationInOperationalViews(collaborator, { userId: 8 })
+    ).toBe(false);
+    expect(canViewReservationInOperationalViews(admin, { userId: 8 })).toBe(
+      true
+    );
+  });
+
+  it("uses the same role scoped visibility rule for calendar reservations", () => {
+    const collaborator = createMockUser({ role: "user", id: 3 });
+
+    expect(
+      canViewReservationInOperationalViews(collaborator, { userId: 3 })
+    ).toBe(true);
+    expect(
+      canViewReservationInOperationalViews(collaborator, { userId: 4 })
+    ).toBe(false);
   });
 });
 

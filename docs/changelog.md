@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-04-28 - Revisao das visoes operacionais
+
+Resumo:
+
+- Dashboard passou a expor metricas separadas para equipamentos fisicos, combos, status operacional e reservas por status.
+- Total de equipamentos fisicos continua vindo somente de `items`; combos/kits aparecem apenas como atalhos cadastrados.
+- Metricas de equipamentos usam `items.status` e nao misturam `items.condition`.
+- Metricas/listas de reservas do Dashboard agora respeitam escopo: admin ve tudo; colaborador ve as proprias reservas.
+- Calendario continua usando `reservation.list`, herda o mesmo escopo de permissao e agora permite abrir o detalhe da reserva.
+- Check-out reforca listagem apenas de reservas `pendente`; check-in reforca listagem apenas de reservas `ativa`.
+- Testes de helpers cobrem Dashboard, disponibilidade, status elegiveis, visibilidade de lista/calendario e timeline sem eventos.
+
+Comandos executados:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou.
+- `corepack pnpm build`: falhou no sandbox com `spawn EPERM` ao iniciar Vite/esbuild; a tentativa fora do sandbox foi bloqueada pelo revisor automatico por limite de uso. Reexecutar fora do sandbox/CI.
+
+Observacao:
+
+- Nao houve migration nesta etapa; `corepack pnpm db:push` nao foi executado.
+
 ## 2026-04-28 - Auditoria operacional de reservas
 
 Resumo:

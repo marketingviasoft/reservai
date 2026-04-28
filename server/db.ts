@@ -22,6 +22,7 @@ import { ENV } from "./_core/env";
 import { nanoid } from "nanoid";
 import { uniqueNumbers } from "../shared/reservationSelection";
 import { RESERVATION_BLOCKING_STATUSES } from "../shared/reservationStatus";
+import { buildDashboardStatsFromCounts, emptyDashboardStats } from "../shared/operationalViews";
 
 // Generate unique equipment code: EQP-XXXXX (uppercase alphanumeric)
 function generateItemCode(): string {
@@ -688,11 +689,14 @@ export async function checkKitConflicts(
 }
 
 // ─── Dashboard Stats ─────────────────────────────────────────────────────────
-export async function getDashboardStats() {
+export async function getDashboardStats(userId?: number) {
   const db = await getDb();
-  if (!db) return { totalItems: 0, availableItems: 0, lentItems: 0, maintenanceItems: 0, totalKits: 0, totalUsers: 0, activeReservations: 0, pendingReservations: 0, overdueReservations: 0 };
+  if (!db) return emptyDashboardStats();
 
   const now = Date.now();
+  const reservationScope = userId ? eq(reservations.userId, userId) : undefined;
+  const scopedReservationWhere = (...conditions: any[]) =>
+    reservationScope ? and(reservationScope, ...conditions) : and(...conditions);
 
   const [
     [itemStats],
@@ -700,6 +704,8 @@ export async function getDashboardStats() {
     [userStats],
     [activeRes],
     [pendingRes],
+    [completedRes],
+    [canceledRes],
     [overdueRes],
   ] = await Promise.all([
     db
@@ -708,6 +714,7 @@ export async function getDashboardStats() {
         available: sql<number>`SUM(CASE WHEN ${items.status} = 'disponivel' THEN 1 ELSE 0 END)`,
         lent: sql<number>`SUM(CASE WHEN ${items.status} = 'emprestado' THEN 1 ELSE 0 END)`,
         maintenance: sql<number>`SUM(CASE WHEN ${items.status} = 'manutencao' THEN 1 ELSE 0 END)`,
+        lost: sql<number>`SUM(CASE WHEN ${items.status} = 'extraviado' THEN 1 ELSE 0 END)`,
       })
       .from(items),
     db.select({ total: count() }).from(kits),
@@ -715,31 +722,42 @@ export async function getDashboardStats() {
     db
       .select({ total: count() })
       .from(reservations)
-      .where(eq(reservations.status, "ativa")),
+      .where(scopedReservationWhere(eq(reservations.status, "ativa"))),
     db
       .select({ total: count() })
       .from(reservations)
-      .where(eq(reservations.status, "pendente")),
+      .where(scopedReservationWhere(eq(reservations.status, "pendente"))),
     db
       .select({ total: count() })
       .from(reservations)
-      .where(and(eq(reservations.status, "ativa"), lte(reservations.endDate, now))),
+      .where(scopedReservationWhere(eq(reservations.status, "concluida"))),
+    db
+      .select({ total: count() })
+      .from(reservations)
+      .where(scopedReservationWhere(eq(reservations.status, "cancelada"))),
+    db
+      .select({ total: count() })
+      .from(reservations)
+      .where(scopedReservationWhere(eq(reservations.status, "ativa"), lte(reservations.endDate, now))),
   ]);
 
-  return {
+  return buildDashboardStatsFromCounts({
     totalItems: itemStats?.total ?? 0,
     availableItems: Number(itemStats?.available ?? 0),
     lentItems: Number(itemStats?.lent ?? 0),
     maintenanceItems: Number(itemStats?.maintenance ?? 0),
+    lostItems: Number(itemStats?.lost ?? 0),
     totalKits: kitStats?.total ?? 0,
     totalUsers: userStats?.total ?? 0,
     activeReservations: activeRes?.total ?? 0,
     pendingReservations: pendingRes?.total ?? 0,
+    completedReservations: completedRes?.total ?? 0,
+    canceledReservations: canceledRes?.total ?? 0,
     overdueReservations: overdueRes?.total ?? 0,
-  };
+  });
 }
 
-export async function getRecentReservations(limit = 10) {
+export async function getRecentReservations(limit = 10, userId?: number) {
   const db = await getDb();
   if (!db) return [];
   return db
@@ -754,14 +772,17 @@ export async function getRecentReservations(limit = 10) {
     })
     .from(reservations)
     .leftJoin(users, eq(reservations.userId, users.id))
+    .where(userId ? eq(reservations.userId, userId) : undefined)
     .orderBy(desc(reservations.createdAt))
     .limit(limit);
 }
 
-export async function getOverdueReservations() {
+export async function getOverdueReservations(userId?: number) {
   const db = await getDb();
   if (!db) return [];
   const now = Date.now();
+  const conditions = [eq(reservations.status, "ativa"), lte(reservations.endDate, now)];
+  if (userId) conditions.push(eq(reservations.userId, userId));
   return db
     .select({
       id: reservations.id,
@@ -773,7 +794,7 @@ export async function getOverdueReservations() {
     })
     .from(reservations)
     .leftJoin(users, eq(reservations.userId, users.id))
-    .where(and(eq(reservations.status, "ativa"), lte(reservations.endDate, now)))
+    .where(and(...conditions))
     .orderBy(asc(reservations.endDate));
 }
 

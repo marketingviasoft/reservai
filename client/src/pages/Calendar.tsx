@@ -57,6 +57,10 @@ export default function Calendar() {
     setLocation(`/reservations?newFrom=${ts}`);
   };
 
+  const handleOpenReservation = (reservationId: number) => {
+    setLocation(`/reservations?detail=${reservationId}`);
+  };
+
   const dateRange = useMemo(() => {
     if (viewMode === "month") {
       const monthStart = startOfMonth(currentDate);
@@ -250,6 +254,10 @@ export default function Calendar() {
                             key={r.id}
                             className={`text-[10px] px-1.5 py-0.5 rounded truncate text-white font-medium ${statusColors[r.status]}`}
                             title={`${r.userName || "Membro"} - ${statusLabels[r.status]}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleOpenReservation(r.id);
+                            }}
                           >
                             {r.userName || "Reserva"}
                           </div>
@@ -289,7 +297,8 @@ export default function Calendar() {
                         {dayReservations.map((r) => (
                           <div
                             key={r.id}
-                            className="p-2 rounded-lg bg-muted/30 border border-border/50"
+                            className="p-2 rounded-lg bg-muted/30 border border-border/50 cursor-pointer hover:bg-muted/50 transition-colors"
+                            onClick={() => handleOpenReservation(r.id)}
                           >
                             <div
                               className={`w-2 h-2 rounded-full mb-1 ${statusColors[r.status]}`}
@@ -333,7 +342,8 @@ export default function Calendar() {
                 return dayReservations.map((r) => (
                   <div
                     key={r.id}
-                    className="flex items-center gap-4 p-4 rounded-xl bg-muted/30 border border-border/50"
+                    className="flex items-center gap-4 p-4 rounded-xl bg-muted/30 border border-border/50 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => handleOpenReservation(r.id)}
                   >
                     <div
                       className={`w-1 h-12 rounded-full ${statusColors[r.status]}`}

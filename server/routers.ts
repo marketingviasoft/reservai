@@ -434,11 +434,20 @@ const reservationRouter = router({
 
 // ─── Dashboard Router ────────────────────────────────────────────────────────
 const dashboardRouter = router({
-  stats: protectedProcedure.query(() => db.getDashboardStats()),
+  stats: protectedProcedure.query(({ ctx }) =>
+    db.getDashboardStats(ctx.user.role === "admin" ? undefined : ctx.user.id)
+  ),
   recentReservations: protectedProcedure
     .input(z.object({ limit: z.number().default(10) }).optional())
-    .query(({ input }) => db.getRecentReservations(input?.limit ?? 10)),
-  overdueReservations: protectedProcedure.query(() => db.getOverdueReservations()),
+    .query(({ ctx, input }) =>
+      db.getRecentReservations(
+        input?.limit ?? 10,
+        ctx.user.role === "admin" ? undefined : ctx.user.id
+      )
+    ),
+  overdueReservations: protectedProcedure.query(({ ctx }) =>
+    db.getOverdueReservations(ctx.user.role === "admin" ? undefined : ctx.user.id)
+  ),
 });
 
 // ─── App Router ──────────────────────────────────────────────────────────────

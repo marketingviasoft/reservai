@@ -5,7 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Package,
+  PackageX,
   CheckCircle2,
+  XCircle,
   AlertTriangle,
   Wrench,
   Users,
@@ -103,10 +105,17 @@ export default function Home() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            title="Total de Itens"
+            title="Equipamentos Físicos"
             value={stats?.totalItems ?? 0}
             icon={Package}
-            description={`${stats?.availableItems ?? 0} disponíveis`}
+            description="Registros reais em items"
+          />
+          <StatCard
+            title="Disponíveis"
+            value={stats?.availableItems ?? 0}
+            icon={CheckCircle2}
+            description="Status operacional"
+            variant="success"
           />
           <StatCard
             title="Emprestados"
@@ -114,13 +123,6 @@ export default function Home() {
             icon={ClipboardList}
             description="Itens em uso"
             variant="warning"
-          />
-          <StatCard
-            title="Reservas Ativas"
-            value={stats?.activeReservations ?? 0}
-            icon={CheckCircle2}
-            description={`${stats?.pendingReservations ?? 0} pendentes`}
-            variant="success"
           />
           <StatCard
             title="Em Atraso"
@@ -136,17 +138,7 @@ export default function Home() {
 
       {/* Secondary Stats */}
       {!statsLoading && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <StatCard
-            title="Combos"
-            value={stats?.totalKits ?? 0}
-            icon={Boxes}
-          />
-          <StatCard
-            title="Equipe"
-            value={stats?.totalUsers ?? 0}
-            icon={Users}
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             title="Em Manutenção"
             value={stats?.maintenanceItems ?? 0}
@@ -154,6 +146,55 @@ export default function Home() {
             variant={
               (stats?.maintenanceItems ?? 0) > 0 ? "warning" : "default"
             }
+          />
+          <StatCard
+            title="Extraviados"
+            value={stats?.lostItems ?? 0}
+            icon={PackageX}
+            description="Status operacional"
+            variant={(stats?.lostItems ?? 0) > 0 ? "danger" : "default"}
+          />
+          <StatCard
+            title="Combos"
+            value={stats?.totalKits ?? 0}
+            icon={Boxes}
+            description="Atalhos, não equipamentos"
+          />
+          <StatCard
+            title="Equipe"
+            value={stats?.totalUsers ?? 0}
+            icon={Users}
+          />
+        </div>
+      )}
+
+      {!statsLoading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            title="Reservas Pendentes"
+            value={stats?.pendingReservations ?? 0}
+            icon={Clock}
+            description="Bloqueiam disponibilidade"
+            variant="warning"
+          />
+          <StatCard
+            title="Reservas Ativas"
+            value={stats?.activeReservations ?? 0}
+            icon={ClipboardList}
+            description="Aguardando check-in"
+            variant="success"
+          />
+          <StatCard
+            title="Reservas Concluídas"
+            value={stats?.completedReservations ?? 0}
+            icon={CheckCircle2}
+            description="Não bloqueiam disponibilidade"
+          />
+          <StatCard
+            title="Reservas Canceladas"
+            value={stats?.canceledReservations ?? 0}
+            icon={XCircle}
+            description="Não bloqueiam disponibilidade"
           />
         </div>
       )}
