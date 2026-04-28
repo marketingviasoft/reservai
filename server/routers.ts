@@ -13,6 +13,22 @@ import {
 } from "./reservationAccess";
 import { buildReservationItemSelection } from "./reservationSelection";
 
+async function getReservationMovementItemIds(reservation: {
+  reservationItems: Array<{ itemId: number | null; kitId: number | null }>;
+}) {
+  const itemIds = db.collectReservationPhysicalItemIds(reservation.reservationItems);
+  const legacyKitIds = Array.from(
+    new Set(
+      reservation.reservationItems
+        .map((reservationItem) => reservationItem.kitId)
+        .filter((kitId): kitId is number => kitId !== null)
+    )
+  );
+  const legacyKitItemIds =
+    legacyKitIds.length > 0 ? await db.getKitItemIds(legacyKitIds) : [];
+  return Array.from(new Set([...itemIds, ...legacyKitItemIds]));
+}
+
 // ─── Category Router ─────────────────────────────────────────────────────────
 const categoryRouter = router({
   list: protectedProcedure.query(() => db.listCategories()),
@@ -198,6 +214,14 @@ const reservationRouter = router({
       assertReservationOwnerOrAdmin(ctx.user, reservation);
       return reservation;
     }),
+  events: protectedProcedure
+    .input(z.object({ reservationId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const reservation = await db.getReservationById(input.reservationId);
+      if (!reservation) throw new Error("Reserva não encontrada");
+      assertReservationOwnerOrAdmin(ctx.user, reservation);
+      return db.listReservationEvents(input.reservationId);
+    }),
   create: protectedProcedure
     .input(z.object({
       startDate: z.number(),
@@ -231,10 +255,23 @@ const reservationRouter = router({
       }
 
       // Reserva é atrelada ao colaborador logado (ctx.user.id)
-      return db.createReservation(
+      const created = await db.createReservation(
         { userId: ctx.user.id, startDate: input.startDate, endDate: input.endDate, notes: input.notes, status: "pendente" },
         selection.itemIds
       );
+      await db.createReservationEvent({
+        reservationId: created.id,
+        eventType: "reservation_created",
+        actorUserId: ctx.user.id,
+        fromStatus: null,
+        toStatus: "pendente",
+        metadata: {
+          itemIds: selection.itemIds,
+          startDate: input.startDate,
+          endDate: input.endDate,
+        },
+      });
+      return created;
     }),
   update: protectedProcedure
     .input(z.object({
@@ -254,8 +291,17 @@ const reservationRouter = router({
           message: "Status de reserva deve ser alterado pelos fluxos de cancelamento, check-out ou check-in.",
         });
       }
-      const { id, ...data } = input;
-      return db.updateReservation(id, data);
+      const { id, status: _status, ...data } = input;
+      const metadata = db.buildReservationUpdateMetadata(reservation, data);
+      await db.updateReservation(id, data);
+      await db.createReservationEvent({
+        reservationId: id,
+        eventType: "reservation_updated",
+        actorUserId: ctx.user.id,
+        fromStatus: reservation.status,
+        toStatus: reservation.status,
+        metadata,
+      });
     }),
   cancel: protectedProcedure
     .input(z.object({ id: z.number() }))
@@ -264,6 +310,16 @@ const reservationRouter = router({
       if (!reservation) throw new Error("Reserva não encontrada");
       assertCanCancelReservation(ctx.user, reservation);
       await db.updateReservation(input.id, { status: "cancelada" });
+      await db.createReservationEvent({
+        reservationId: input.id,
+        eventType: "reservation_cancelled",
+        actorUserId: ctx.user.id,
+        fromStatus: reservation.status,
+        toStatus: "cancelada",
+        metadata: {
+          itemIds: await getReservationMovementItemIds(reservation),
+        },
+      });
       if (reservation.status === "ativa") {
         for (const ri of reservation.reservationItems) {
           if (ri.itemId) await db.updateItem(ri.itemId, { status: "disponivel" });
@@ -284,6 +340,7 @@ const reservationRouter = router({
       const reservation = await db.getReservationById(input.id);
       if (!reservation) throw new Error("Reserva não encontrada");
       if (reservation.status !== "pendente") throw new Error("Apenas reservas pendentes podem ter check-out");
+      const itemIds = await getReservationMovementItemIds(reservation);
       await db.updateReservation(input.id, {
         status: "ativa",
         checkoutAt: Date.now(),
@@ -300,6 +357,14 @@ const reservationRouter = router({
           }
         }
       }
+      await db.createReservationEvent({
+        reservationId: input.id,
+        eventType: "reservation_checked_out",
+        actorUserId: ctx.user.id,
+        fromStatus: reservation.status,
+        toStatus: "ativa",
+        metadata: { itemIds },
+      });
     }),
   checkin: protectedProcedure
     .input(z.object({ id: z.number() }))
@@ -308,6 +373,7 @@ const reservationRouter = router({
       const reservation = await db.getReservationById(input.id);
       if (!reservation) throw new Error("Reserva não encontrada");
       if (reservation.status !== "ativa") throw new Error("Apenas reservas ativas podem ter check-in");
+      const itemIds = await getReservationMovementItemIds(reservation);
       await db.updateReservation(input.id, {
         status: "concluida",
         checkinAt: Date.now(),
@@ -325,6 +391,14 @@ const reservationRouter = router({
           await db.recalculateKitStatus(ri.kitId);
         }
       }
+      await db.createReservationEvent({
+        reservationId: input.id,
+        eventType: "reservation_checked_in",
+        actorUserId: ctx.user.id,
+        fromStatus: reservation.status,
+        toStatus: "concluida",
+        metadata: { itemIds },
+      });
     }),
   checkConflicts: protectedProcedure
     .input(z.object({

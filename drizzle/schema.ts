@@ -2,6 +2,7 @@ import { relations } from "drizzle-orm";
 import {
   bigint,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   serial,
@@ -30,6 +31,13 @@ export const reservationStatusEnum = pgEnum("reservation_status", [
   "ativa",
   "concluida",
   "cancelada",
+]);
+export const reservationEventTypeEnum = pgEnum("reservation_event_type", [
+  "reservation_created",
+  "reservation_updated",
+  "reservation_cancelled",
+  "reservation_checked_out",
+  "reservation_checked_in",
 ]);
 
 // ─── Users (Equipe) ──────────────────────────────────────────────────
@@ -164,6 +172,26 @@ export const reservationItems = pgTable("reservation_items", {
 export type ReservationItem = typeof reservationItems.$inferSelect;
 export type InsertReservationItem = typeof reservationItems.$inferInsert;
 
+// ─── Reservation Events (Auditoria Operacional) ─────────────────────────────
+export const reservationEvents = pgTable("reservation_events", {
+  id: serial("id").primaryKey(),
+  reservationId: integer("reservationId")
+    .notNull()
+    .references(() => reservations.id, { onDelete: "cascade" }),
+  eventType: reservationEventTypeEnum("eventType").notNull(),
+  actorUserId: integer("actorUserId").references(() => users.id),
+  fromStatus: reservationStatusEnum("fromStatus"),
+  toStatus: reservationStatusEnum("toStatus"),
+  metadata: jsonb("metadata")
+    .$type<Record<string, unknown>>()
+    .default({})
+    .notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ReservationEvent = typeof reservationEvents.$inferSelect;
+export type InsertReservationEvent = typeof reservationEvents.$inferInsert;
+
 // ─── Relations ───────────────────────────────────────────────────────────────
 export const itemsRelations = relations(items, ({ one }) => ({
   category: one(categories, {
@@ -198,6 +226,7 @@ export const reservationsRelations = relations(reservations, ({ one, many }) => 
     relationName: "checkinUser",
   }),
   reservationItems: many(reservationItems),
+  events: many(reservationEvents),
 }));
 
 export const reservationItemsRelations = relations(
@@ -220,4 +249,22 @@ export const reservationItemsRelations = relations(
 
 export const usersRelations = relations(users, ({ many }) => ({
   reservations: many(reservations, { relationName: "reservationUser" }),
+  reservationEvents: many(reservationEvents, {
+    relationName: "reservationEventActor",
+  }),
 }));
+
+export const reservationEventsRelations = relations(
+  reservationEvents,
+  ({ one }) => ({
+    reservation: one(reservations, {
+      fields: [reservationEvents.reservationId],
+      references: [reservations.id],
+    }),
+    actorUser: one(users, {
+      fields: [reservationEvents.actorUserId],
+      references: [users.id],
+      relationName: "reservationEventActor",
+    }),
+  })
+);

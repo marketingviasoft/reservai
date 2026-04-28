@@ -19,6 +19,7 @@ corepack pnpm db:push
 - `item_condition`: `novo`, `bom`, `regular`, `danificado`
 - `kit_status`: `completo`, `incompleto`
 - `reservation_status`: `pendente`, `ativa`, `concluida`, `cancelada`
+- `reservation_event_type`: `reservation_created`, `reservation_updated`, `reservation_cancelled`, `reservation_checked_out`, `reservation_checked_in`
 
 ### `users`
 
@@ -153,6 +154,33 @@ Estado atual:
 - `kitId` permanece no schema por compatibilidade temporaria com reservas antigas, se existirem.
 - `kitId` nao deve ser tratado como unidade real de reserva ou bloqueio.
 - A disponibilidade e calculada por equipamento fisico (`itemId`) e por reservas `pendente` ou `ativa`.
+
+### `reservation_events`
+
+Eventos de auditoria operacional de reservas.
+
+Campos principais:
+
+- `id`
+- `reservationId`
+- `eventType`
+- `actorUserId`
+- `fromStatus`
+- `toStatus`
+- `metadata`
+- `createdAt`
+
+Estado atual:
+
+- Eventos sao criados exclusivamente pelo backend durante a acao operacional real.
+- Nao ha mutation publica para criar, editar ou apagar eventos.
+- `reservation_created` registra criador, periodo e `itemIds`.
+- `reservation_updated` registra os campos permitidos alterados em `metadata.changes`.
+- `reservation_cancelled` registra a transicao para `cancelada`.
+- `reservation_checked_out` registra a transicao para `ativa` e os itens movimentados.
+- `reservation_checked_in` registra a transicao para `concluida` e os itens devolvidos.
+- Admin consulta eventos de qualquer reserva; colaborador consulta apenas eventos das proprias reservas.
+- Reservas antigas podem nao ter eventos historicos.
 
 ## Variaveis de ambiente relacionadas
 

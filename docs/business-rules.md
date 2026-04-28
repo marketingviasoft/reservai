@@ -59,9 +59,11 @@ No banco, o papel `user` representa o colaborador comum.
 
 - Check-out muda reserva de `pendente` para `ativa`.
 - Check-out registra `checkoutAt` e `checkoutByUserId`.
+- Check-out gera evento de auditoria `reservation_checked_out`.
 - Check-out marca itens associados como `emprestado`.
 - Check-in muda reserva de `ativa` para `concluida`.
 - Check-in registra `checkinAt` e `checkinByUserId`.
+- Check-in gera evento de auditoria `reservation_checked_in`.
 - Check-in marca itens associados como `disponivel`.
 - Check-in e check-out exigem admin no estado atual.
 
@@ -80,8 +82,23 @@ No banco, o papel `user` representa o colaborador comum.
 - Check-out e check-in exigem admin no backend, mesmo que alguem tente chamar a API diretamente.
 - Exclusao de reserva exige admin.
 
+## Auditoria operacional
+
+- A auditoria de reservas e registrada pelo backend na tabela `reservation_events`.
+- A UI nao cria, edita ou apaga eventos diretamente.
+- Eventos atuais:
+  - `reservation_created`: criado ao registrar nova reserva.
+  - `reservation_updated`: criado ao editar dados permitidos da reserva.
+  - `reservation_cancelled`: criado ao cancelar reserva `pendente`.
+  - `reservation_checked_out`: criado no check-out administrativo.
+  - `reservation_checked_in`: criado no check-in administrativo.
+- Cada evento registra `reservationId`, `eventType`, `actorUserId`, `fromStatus`, `toStatus`, `metadata` e `createdAt`.
+- `metadata` guarda detalhes operacionais minimos, como itens movimentados, periodo e campos alterados.
+- Admin pode consultar eventos de qualquer reserva.
+- Colaborador comum pode consultar eventos somente das proprias reservas.
+- Reservas antigas podem nao ter eventos historicos; nesse caso, a timeline aparece vazia com mensagem informativa.
+
 ## Pontos ainda abertos
 
 - Definir se kits continuam existindo ou se serao substituidos formalmente por templates/combos.
-- Avaliar criacao de trilha de auditoria (`reservation_events` ou equivalente).
 - Definir se o processo tera aprovacao explicita antes do check-out.

@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-04-28 - Auditoria operacional de reservas
+
+Resumo:
+
+- Criada tabela `reservation_events` e enum `reservation_event_type`.
+- Eventos de reserva agora sao registrados pelo backend em criacao, edicao permitida, cancelamento, check-out e check-in.
+- Eventos registram ator, transicao de status, data/hora e `metadata` operacional.
+- Adicionada query protegida `reservation.events`: admin consulta qualquer reserva; colaborador consulta somente reservas proprias.
+- Detalhe da reserva exibe timeline simples de auditoria e mensagem para reservas antigas sem eventos.
+- Nao foi criada rota publica para criar, editar ou apagar eventos de auditoria.
+- Testes de auditoria e permissoes de leitura foram adicionados.
+
+Migration:
+
+- `drizzle/0002_small_karnak.sql`
+
+Comandos executados:
+
+- `corepack pnpm drizzle-kit generate`: passou fora do sandbox apos `spawn EPERM`; gerou a migration de auditoria.
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou. Resultado: 2 arquivos, 58 testes.
+- `corepack pnpm build`: passou fora do sandbox apos `spawn EPERM`; manteve apenas o alerta ja conhecido de chunk frontend acima de 500 kB.
+- `corepack pnpm db:push`: tentativa no sandbox falhou com `spawn EPERM`; execucao fora do sandbox foi bloqueada por seguranca porque poderia aplicar migrations em um `DATABASE_URL` nao verificado. Aplicar a migration em ambiente controlado com a connection string correta do Supabase/Postgres.
+
 ## 2026-04-28 - Combos como atalhos de selecao
 
 Resumo:

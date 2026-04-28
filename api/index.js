@@ -80,6 +80,7 @@ import { relations } from "drizzle-orm";
 import {
   bigint,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   serial,
@@ -107,6 +108,13 @@ var reservationStatusEnum = pgEnum("reservation_status", [
   "ativa",
   "concluida",
   "cancelada"
+]);
+var reservationEventTypeEnum = pgEnum("reservation_event_type", [
+  "reservation_created",
+  "reservation_updated",
+  "reservation_cancelled",
+  "reservation_checked_out",
+  "reservation_checked_in"
 ]);
 var users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -194,6 +202,16 @@ var reservationItems = pgTable("reservation_items", {
   kitId: integer("kitId").references(() => kits.id),
   createdAt: timestamp("createdAt").defaultNow().notNull()
 });
+var reservationEvents = pgTable("reservation_events", {
+  id: serial("id").primaryKey(),
+  reservationId: integer("reservationId").notNull().references(() => reservations.id, { onDelete: "cascade" }),
+  eventType: reservationEventTypeEnum("eventType").notNull(),
+  actorUserId: integer("actorUserId").references(() => users.id),
+  fromStatus: reservationStatusEnum("fromStatus"),
+  toStatus: reservationStatusEnum("toStatus"),
+  metadata: jsonb("metadata").$type().default({}).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
 var itemsRelations = relations(items, ({ one }) => ({
   category: one(categories, {
     fields: [items.categoryId],
@@ -223,7 +241,8 @@ var reservationsRelations = relations(reservations, ({ one, many }) => ({
     references: [users.id],
     relationName: "checkinUser"
   }),
-  reservationItems: many(reservationItems)
+  reservationItems: many(reservationItems),
+  events: many(reservationEvents)
 }));
 var reservationItemsRelations = relations(
   reservationItems,
@@ -243,8 +262,25 @@ var reservationItemsRelations = relations(
   })
 );
 var usersRelations = relations(users, ({ many }) => ({
-  reservations: many(reservations, { relationName: "reservationUser" })
+  reservations: many(reservations, { relationName: "reservationUser" }),
+  reservationEvents: many(reservationEvents, {
+    relationName: "reservationEventActor"
+  })
 }));
+var reservationEventsRelations = relations(
+  reservationEvents,
+  ({ one }) => ({
+    reservation: one(reservations, {
+      fields: [reservationEvents.reservationId],
+      references: [reservations.id]
+    }),
+    actorUser: one(users, {
+      fields: [reservationEvents.actorUserId],
+      references: [users.id],
+      relationName: "reservationEventActor"
+    })
+  })
+);
 
 // server/_core/env.ts
 var ENV = {
@@ -674,6 +710,53 @@ async function deleteReservation(id) {
   if (!db) throw new Error("DB not available");
   await db.delete(reservations).where(eq(reservations.id, id));
 }
+function buildReservationEvent(input) {
+  return {
+    reservationId: input.reservationId,
+    eventType: input.eventType,
+    actorUserId: input.actorUserId ?? null,
+    fromStatus: input.fromStatus ?? null,
+    toStatus: input.toStatus ?? null,
+    metadata: input.metadata ?? {}
+  };
+}
+function buildReservationUpdateMetadata(before, changes) {
+  const changedFields = {};
+  for (const [field, to] of Object.entries(changes)) {
+    if (to === void 0) continue;
+    const from = before[field];
+    if (from !== to) {
+      changedFields[field] = { from: from ?? null, to: to ?? null };
+    }
+  }
+  return { changes: changedFields };
+}
+function collectReservationPhysicalItemIds(reservationItemsData) {
+  return uniqueNumbers(
+    reservationItemsData.map((reservationItem) => reservationItem.itemId).filter((itemId) => itemId !== null)
+  );
+}
+async function createReservationEvent(input) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(reservationEvents).values(buildReservationEvent(input));
+}
+async function listReservationEvents(reservationId) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: reservationEvents.id,
+    reservationId: reservationEvents.reservationId,
+    eventType: reservationEvents.eventType,
+    actorUserId: reservationEvents.actorUserId,
+    actorName: users.name,
+    actorEmail: users.email,
+    fromStatus: reservationEvents.fromStatus,
+    toStatus: reservationEvents.toStatus,
+    metadata: reservationEvents.metadata,
+    createdAt: reservationEvents.createdAt
+  }).from(reservationEvents).leftJoin(users, eq(reservationEvents.actorUserId, users.id)).where(eq(reservationEvents.reservationId, reservationId)).orderBy(asc(reservationEvents.createdAt));
+}
 async function checkItemConflicts(itemIds, startDate, endDate, excludeReservationId) {
   const db = await getDb();
   if (!db) return [];
@@ -962,6 +1045,16 @@ function assertCanUpdateReservation(actor, reservation) {
 }
 
 // server/routers.ts
+async function getReservationMovementItemIds(reservation) {
+  const itemIds = collectReservationPhysicalItemIds(reservation.reservationItems);
+  const legacyKitIds = Array.from(
+    new Set(
+      reservation.reservationItems.map((reservationItem) => reservationItem.kitId).filter((kitId) => kitId !== null)
+    )
+  );
+  const legacyKitItemIds = legacyKitIds.length > 0 ? await getKitItemIds(legacyKitIds) : [];
+  return Array.from(/* @__PURE__ */ new Set([...itemIds, ...legacyKitItemIds]));
+}
 var categoryRouter = router({
   list: protectedProcedure.query(() => listCategories()),
   create: adminProcedure.input(z.object({ name: z.string().min(1), description: z.string().optional(), color: z.string().optional() })).mutation(({ input }) => createCategory(input)),
@@ -1094,6 +1187,12 @@ var reservationRouter = router({
     assertReservationOwnerOrAdmin(ctx.user, reservation);
     return reservation;
   }),
+  events: protectedProcedure.input(z.object({ reservationId: z.number() })).query(async ({ ctx, input }) => {
+    const reservation = await getReservationById(input.reservationId);
+    if (!reservation) throw new Error("Reserva n\xE3o encontrada");
+    assertReservationOwnerOrAdmin(ctx.user, reservation);
+    return listReservationEvents(input.reservationId);
+  }),
   create: protectedProcedure.input(z.object({
     startDate: z.number(),
     endDate: z.number(),
@@ -1115,10 +1214,23 @@ var reservationRouter = router({
       const names = availability.conflicts.filter((c) => selection.conflictingDirectItemIds.includes(c.itemId)).map((c) => c.itemName || c.itemCode || `Item #${c.itemId}`).filter((v, i, a) => a.indexOf(v) === i);
       throw new Error(`Conflito de reserva para os itens: ${names.join(", ")}`);
     }
-    return createReservation(
+    const created = await createReservation(
       { userId: ctx.user.id, startDate: input.startDate, endDate: input.endDate, notes: input.notes, status: "pendente" },
       selection.itemIds
     );
+    await createReservationEvent({
+      reservationId: created.id,
+      eventType: "reservation_created",
+      actorUserId: ctx.user.id,
+      fromStatus: null,
+      toStatus: "pendente",
+      metadata: {
+        itemIds: selection.itemIds,
+        startDate: input.startDate,
+        endDate: input.endDate
+      }
+    });
+    return created;
   }),
   update: protectedProcedure.input(z.object({
     id: z.number(),
@@ -1136,14 +1248,33 @@ var reservationRouter = router({
         message: "Status de reserva deve ser alterado pelos fluxos de cancelamento, check-out ou check-in."
       });
     }
-    const { id, ...data } = input;
-    return updateReservation(id, data);
+    const { id, status: _status, ...data } = input;
+    const metadata = buildReservationUpdateMetadata(reservation, data);
+    await updateReservation(id, data);
+    await createReservationEvent({
+      reservationId: id,
+      eventType: "reservation_updated",
+      actorUserId: ctx.user.id,
+      fromStatus: reservation.status,
+      toStatus: reservation.status,
+      metadata
+    });
   }),
   cancel: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const reservation = await getReservationById(input.id);
     if (!reservation) throw new Error("Reserva n\xE3o encontrada");
     assertCanCancelReservation(ctx.user, reservation);
     await updateReservation(input.id, { status: "cancelada" });
+    await createReservationEvent({
+      reservationId: input.id,
+      eventType: "reservation_cancelled",
+      actorUserId: ctx.user.id,
+      fromStatus: reservation.status,
+      toStatus: "cancelada",
+      metadata: {
+        itemIds: await getReservationMovementItemIds(reservation)
+      }
+    });
     if (reservation.status === "ativa") {
       for (const ri of reservation.reservationItems) {
         if (ri.itemId) await updateItem(ri.itemId, { status: "disponivel" });
@@ -1162,6 +1293,7 @@ var reservationRouter = router({
     const reservation = await getReservationById(input.id);
     if (!reservation) throw new Error("Reserva n\xE3o encontrada");
     if (reservation.status !== "pendente") throw new Error("Apenas reservas pendentes podem ter check-out");
+    const itemIds = await getReservationMovementItemIds(reservation);
     await updateReservation(input.id, {
       status: "ativa",
       checkoutAt: Date.now(),
@@ -1178,12 +1310,21 @@ var reservationRouter = router({
         }
       }
     }
+    await createReservationEvent({
+      reservationId: input.id,
+      eventType: "reservation_checked_out",
+      actorUserId: ctx.user.id,
+      fromStatus: reservation.status,
+      toStatus: "ativa",
+      metadata: { itemIds }
+    });
   }),
   checkin: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     assertAdminReservationOperator(ctx.user);
     const reservation = await getReservationById(input.id);
     if (!reservation) throw new Error("Reserva n\xE3o encontrada");
     if (reservation.status !== "ativa") throw new Error("Apenas reservas ativas podem ter check-in");
+    const itemIds = await getReservationMovementItemIds(reservation);
     await updateReservation(input.id, {
       status: "concluida",
       checkinAt: Date.now(),
@@ -1201,6 +1342,14 @@ var reservationRouter = router({
         await recalculateKitStatus(ri.kitId);
       }
     }
+    await createReservationEvent({
+      reservationId: input.id,
+      eventType: "reservation_checked_in",
+      actorUserId: ctx.user.id,
+      fromStatus: reservation.status,
+      toStatus: "concluida",
+      metadata: { itemIds }
+    });
   }),
   checkConflicts: protectedProcedure.input(z.object({
     itemIds: z.array(z.number()).default([]),

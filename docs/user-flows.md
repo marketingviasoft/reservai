@@ -50,6 +50,7 @@
 6. Itens fisicos sao persistidos em `reservation_items.itemId`.
 7. A reserva fica vinculada ao usuario autenticado que criou a solicitacao.
 8. Novas reservas nao usam `reservation_items.kitId`; essa coluna e legado/compatibilidade.
+9. Backend registra `reservation_created` com ator, periodo e itens reservados.
 
 ## Cancelamento e edicao de reserva
 
@@ -61,6 +62,8 @@
 6. Reservas `ativa` nao podem ser canceladas; devem ser encerradas via check-in.
 7. Reservas `concluida` e `cancelada` nao podem ser canceladas.
 8. Alteracao manual de status pela rota de update e bloqueada; status muda por cancelamento, check-out ou check-in.
+9. Edicoes permitidas registram `reservation_updated`.
+10. Cancelamentos permitidos registram `reservation_cancelled`.
 
 ## Check-out
 
@@ -70,6 +73,7 @@
 4. Reserva passa para `ativa`.
 5. Backend registra data e usuario operador.
 6. Itens da reserva passam para `emprestado`.
+7. Backend registra `reservation_checked_out` com ator, transicao de status e itens movimentados.
 
 ## Check-in
 
@@ -80,6 +84,17 @@
 5. Backend registra data e usuario operador.
 6. Itens da reserva voltam para `disponivel`.
 7. Compatibilidade legada ainda recalcula combos caso uma reserva antiga tenha `kitId`, mas novas reservas movimentam apenas itens fisicos.
+8. Backend registra `reservation_checked_in` com ator, transicao de status e itens devolvidos.
+
+## Timeline de auditoria
+
+1. Usuario abre o detalhe de uma reserva.
+2. Backend valida se o usuario e admin ou dono da reserva.
+3. Admin ve eventos de qualquer reserva.
+4. Colaborador comum ve eventos somente das proprias reservas.
+5. A tela exibe tipo do evento, ator, data/hora, descricao curta e transicao de status quando houver.
+6. Reservas antigas sem eventos exibem a mensagem: `Nenhum evento de auditoria registrado para esta reserva.`
+7. A UI apenas consulta eventos; criacao, edicao e exclusao de auditoria nao sao expostas ao frontend.
 
 ## Calendario
 

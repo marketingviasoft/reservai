@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import { COOKIE_NAME } from "../shared/const";
 import type { TrpcContext } from "./_core/context";
-import { buildPhysicalReservationItems } from "./db";
+import {
+  buildPhysicalReservationItems,
+  buildReservationEvent,
+  buildReservationUpdateMetadata,
+  collectReservationPhysicalItemIds,
+} from "./db";
 import {
   assertAdminReservationOperator,
   assertCanCancelReservation,
@@ -15,6 +20,10 @@ import {
   buildReservationItemSelection,
 } from "./reservationSelection";
 import { isReservationBlockingAvailability } from "../shared/reservationStatus";
+import {
+  buildReservationEventDescription,
+  hasReservationEvents,
+} from "../shared/reservationEvents";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -545,5 +554,131 @@ describe("reservation availability status rules", () => {
   it("does not block availability for canceled or concluded reservations", () => {
     expect(isReservationBlockingAvailability("cancelada")).toBe(false);
     expect(isReservationBlockingAvailability("concluida")).toBe(false);
+  });
+});
+
+describe("reservation audit events", () => {
+  it("builds a reservation_created event with actor, status and period metadata", () => {
+    const event = buildReservationEvent({
+      reservationId: 10,
+      eventType: "reservation_created",
+      actorUserId: 7,
+      fromStatus: null,
+      toStatus: "pendente",
+      metadata: {
+        itemIds: [1, 2],
+        startDate: 1777400000000,
+        endDate: 1777486400000,
+      },
+    });
+
+    expect(event).toMatchObject({
+      reservationId: 10,
+      eventType: "reservation_created",
+      actorUserId: 7,
+      fromStatus: null,
+      toStatus: "pendente",
+    });
+    expect(event.metadata).toEqual({
+      itemIds: [1, 2],
+      startDate: 1777400000000,
+      endDate: 1777486400000,
+    });
+  });
+
+  it("builds a reservation_cancelled event with the status transition", () => {
+    const event = buildReservationEvent({
+      reservationId: 11,
+      eventType: "reservation_cancelled",
+      actorUserId: 1,
+      fromStatus: "pendente",
+      toStatus: "cancelada",
+    });
+
+    expect(event.eventType).toBe("reservation_cancelled");
+    expect(event.actorUserId).toBe(1);
+    expect(event.fromStatus).toBe("pendente");
+    expect(event.toStatus).toBe("cancelada");
+  });
+
+  it("builds a reservation_checked_out event with moved physical item ids", () => {
+    const itemIds = collectReservationPhysicalItemIds([
+      { itemId: 3 },
+      { itemId: 3 },
+      { itemId: 4 },
+      { itemId: null },
+    ]);
+    const event = buildReservationEvent({
+      reservationId: 12,
+      eventType: "reservation_checked_out",
+      actorUserId: 1,
+      fromStatus: "pendente",
+      toStatus: "ativa",
+      metadata: { itemIds },
+    });
+
+    expect(event.metadata).toEqual({ itemIds: [3, 4] });
+    expect(event.fromStatus).toBe("pendente");
+    expect(event.toStatus).toBe("ativa");
+  });
+
+  it("builds a reservation_checked_in event with the concluded transition", () => {
+    const event = buildReservationEvent({
+      reservationId: 13,
+      eventType: "reservation_checked_in",
+      actorUserId: 1,
+      fromStatus: "ativa",
+      toStatus: "concluida",
+      metadata: { itemIds: [5] },
+    });
+
+    expect(event.eventType).toBe("reservation_checked_in");
+    expect(event.actorUserId).toBe(1);
+    expect(event.fromStatus).toBe("ativa");
+    expect(event.toStatus).toBe("concluida");
+  });
+
+  it("records changed fields for reservation_updated metadata", () => {
+    const metadata = buildReservationUpdateMetadata(
+      { startDate: 1000, endDate: 2000, notes: "Antes" },
+      { startDate: 1000, endDate: 3000, notes: "Depois" }
+    );
+
+    expect(metadata).toEqual({
+      changes: {
+        endDate: { from: 2000, to: 3000 },
+        notes: { from: "Antes", to: "Depois" },
+      },
+    });
+  });
+
+  it("blocks collaborators from reading audit events of another user's reservation", () => {
+    const user = createMockUser({ role: "user", id: 2 });
+    expect(() => assertReservationOwnerOrAdmin(user, { userId: 7 })).toThrow();
+  });
+
+  it("allows admins to read audit events of any reservation", () => {
+    const admin = createMockUser({ role: "admin", id: 1 });
+    expect(() => assertReservationOwnerOrAdmin(admin, { userId: 7 })).not.toThrow();
+  });
+
+  it("does not expose a direct event creation procedure", () => {
+    const procedurePaths = Object.keys((appRouter as any)._def.procedures);
+
+    expect(procedurePaths).toContain("reservation.events");
+    expect(procedurePaths).not.toContain("reservation.createEvent");
+    expect(procedurePaths).not.toContain("reservation.updateEvent");
+    expect(procedurePaths).not.toContain("reservation.deleteEvent");
+  });
+
+  it("keeps old reservations without events renderable by the timeline helpers", () => {
+    expect(hasReservationEvents([])).toBe(false);
+    expect(
+      buildReservationEventDescription({
+        eventType: "reservation_checked_in",
+        actor: "Admin",
+        formattedDate: "28/04/2026 às 09:05",
+      })
+    ).toBe("Check-in realizado por Admin em 28/04/2026 às 09:05.");
   });
 });

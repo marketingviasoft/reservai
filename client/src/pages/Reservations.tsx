@@ -52,12 +52,18 @@ import {
   Building2,
   AlertTriangle,
   Lock,
+  History,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { useSearch } from "wouter";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { buildComboCartUpdate } from "@shared/reservationSelection";
+import {
+  RESERVATION_EVENT_TYPE_LABELS,
+  buildReservationEventDescription,
+  hasReservationEvents,
+} from "@shared/reservationEvents";
 
 const statusLabels: Record<string, string> = {
   pendente: "Pendente",
@@ -72,6 +78,22 @@ const statusColors: Record<string, string> = {
   concluida: "bg-emerald-100 text-emerald-700",
   cancelada: "bg-gray-100 text-gray-500",
 };
+
+function getEventActor(event: any) {
+  return event.actorName || event.actorEmail || "Sistema";
+}
+
+function formatEventDate(value: Date | string | number) {
+  return format(new Date(value), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+}
+
+function describeReservationEvent(event: any) {
+  return buildReservationEventDescription({
+    eventType: event.eventType,
+    actor: getEventActor(event),
+    formattedDate: formatEventDate(event.createdAt),
+  });
+}
 
 type ReservationForm = {
   startDate: string;
@@ -135,6 +157,11 @@ export default function Reservations() {
     { id: detailId! },
     { enabled: detailId !== null }
   );
+  const { data: detailEvents, isLoading: eventsLoading } =
+    trpc.reservation.events.useQuery(
+      { reservationId: detailId! },
+      { enabled: detailId !== null }
+    );
 
   // Real-time availability check based on selected dates
   const { data: availability } = trpc.reservation.checkAvailability.useQuery(
@@ -159,6 +186,7 @@ export default function Reservations() {
       utils.reservation.list.invalidate();
       utils.dashboard.stats.invalidate();
       utils.item.list.invalidate();
+      utils.reservation.events.invalidate();
       setCancelId(null);
       toast.success("Reserva cancelada");
     },
@@ -765,6 +793,54 @@ export default function Reservations() {
                     </div>
                   </div>
                 )}
+              <div>
+                <p className="text-muted-foreground text-xs mb-1.5">
+                  Auditoria
+                </p>
+                {eventsLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-12" />
+                    <Skeleton className="h-12" />
+                  </div>
+                ) : hasReservationEvents(detailEvents) ? (
+                  <div className="space-y-2">
+                    {(detailEvents ?? []).map((event: any) => (
+                      <div
+                        key={event.id}
+                        className="flex gap-2 rounded-md border bg-background p-2.5"
+                      >
+                        <History className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">
+                            {RESERVATION_EVENT_TYPE_LABELS[event.eventType] ||
+                              "Evento registrado"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {describeReservationEvent(event)}
+                          </p>
+                          {event.fromStatus !== event.toStatus &&
+                            (event.fromStatus || event.toStatus) && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Status:{" "}
+                                {event.fromStatus
+                                  ? statusLabels[event.fromStatus]
+                                  : "sem status"}{" "}
+                                →{" "}
+                                {event.toStatus
+                                  ? statusLabels[event.toStatus]
+                                  : "sem status"}
+                              </p>
+                            )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-md bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                    Nenhum evento de auditoria registrado para esta reserva.
+                  </p>
+                )}
+              </div>
             </div>
           ) : (
             <Skeleton className="h-40" />

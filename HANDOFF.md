@@ -66,6 +66,7 @@ Rotas tRPC existentes:
 - `kit`: CRUD e vinculacao de itens
 - `profile`: listagem de usuarios, edicao de perfil, alteracao de role e historico
 - `reservation`: listagem, detalhe, criacao, atualizacao, cancelamento, check-out, check-in, checagem de conflitos e disponibilidade
+- `reservation.events`: timeline de auditoria da reserva, com leitura protegida por dono/admin
 - `dashboard`: metricas, reservas recentes e atrasadas
 
 O backend ja possui:
@@ -117,7 +118,6 @@ Pontos ainda desalinhados:
 - a tabela tecnica ainda se chama `kits`, mas a UI e a regra de negocio tratam esses agrupamentos como **combos apenas como atalho**;
 - `reservation_items` ainda aceita `kitId` no schema por compatibilidade, embora novas reservas persistam itens fisicos em `itemId` e `kitId = null`;
 - nao existe entidade tecnica renomeada para `template/combo`;
-- nao existe trilha de auditoria detalhada de eventos, apenas timestamps principais na reserva;
 - nao existe etapa explicita de aprovacao entre "pendente" e "ativa".
 
 ### Riscos tecnicos e observacoes importantes
@@ -210,6 +210,7 @@ Estado atual no codigo:
 - reservas validam dono/status para `update` e `cancel`;
 - check-out e check-in exigem admin;
 - update manual de `status` e bloqueado para preservar transicoes pelos fluxos dedicados.
+- leitura de eventos de auditoria segue o mesmo escopo de reserva: admin ve qualquer reserva; colaborador ve somente as proprias.
 
 Estado atual das permissoes de reserva:
 
@@ -306,8 +307,12 @@ Estado atual:
 
 - parcialmente implementado;
 - a tabela `reservations` guarda `checkoutAt`, `checkoutByUserId`, `checkinAt`, `checkinByUserId` e `status`;
+- a tabela `reservation_events` registra eventos operacionais de reserva com ator, data, transicao de status e metadata;
+- eventos atuais: `reservation_created`, `reservation_updated`, `reservation_cancelled`, `reservation_checked_out`, `reservation_checked_in`;
+- eventos sao criados pelo backend nas mutations reais, sem rota publica de criacao/edicao/delecao;
+- detalhe da reserva exibe uma timeline simples de auditoria;
 - existe historico por usuario e listagem por status;
-- ainda falta uma trilha de auditoria mais completa para servir como historico operacional definitivo.
+- reservas antigas podem aparecer sem eventos historicos, sem quebrar a tela.
 
 ## 5. Arquitetura do Banco de Dados
 
@@ -462,6 +467,32 @@ Observacao importante:
 - novas reservas gravam `kitId = null`;
 - `kitId` permanece no schema por compatibilidade temporaria, mas nao deve ser a unidade final de bloqueio em novas melhorias.
 
+### `reservation_events`
+
+Eventos de auditoria operacional vinculados a uma reserva.
+
+Campos principais:
+
+- `id`
+- `reservationId`
+- `eventType`
+- `actorUserId`
+- `fromStatus`
+- `toStatus`
+- `metadata`
+- `createdAt`
+
+Relacionamentos:
+
+- N:1 com `reservations`
+- N:1 com `users` como ator do evento
+
+Observacao importante:
+
+- eventos sao append-only no fluxo atual da aplicacao;
+- nao ha mutation de frontend/API para adulterar auditoria diretamente;
+- reservas antigas podem nao ter eventos anteriores a criacao dessa tabela.
+
 ### Leitura arquitetural do dominio
 
 ### O que esta correto no modelo atual
@@ -487,9 +518,8 @@ Modelo alvo sugerido:
 - `template_items`
 - `reservation_items` referenciando sempre `itemId`
 
-Opcional, mas fortemente recomendado:
+Opcional, mas fortemente recomendado para fases futuras:
 
-- `reservation_events` para auditar criacao, cancelamento, aprovacao, check-out, check-in e edicoes;
 - `item_movements` ou log de movimentacao fisica para rastreabilidade operacional;
 - `approvedAt` e `approvedByUserId` em `reservations` caso a operacao exija aprovacao formal antes da retirada.
 
@@ -506,11 +536,11 @@ Opcional, mas fortemente recomendado:
 - Decidir se colaboradores devem continuar vendo somente reservas proprias ou se uma visao interna parcial sera necessaria no futuro.
 - Expandir testes integrados de reserva com banco de teste quando houver ambiente dedicado.
 
-### Prioridade 3 - fortalecer a trilha de auditoria
+### Prioridade 3 - evoluir a trilha de auditoria
 
-- Criar log de eventos de reserva.
-- Registrar claramente quem criou, aprovou, cancelou, retirou e devolveu.
-- Expor filtros e timeline operacional na UI.
+- Avaliar tela administrativa global de auditoria.
+- Planejar eventos futuros de item, como dano, manutencao e extravio.
+- Expandir testes integrados com banco de teste dedicado.
 
 ### Prioridade 4 - consolidar o fluxo de negocio
 
@@ -532,5 +562,5 @@ Se precisarmos continuar o desenvolvimento agora, a ordem mais segura e:
 1. validar se existem reservas antigas com `reservation_items.kitId`;
 2. planejar migracao para remover `kitId` de `reservation_items`, se aplicavel;
 3. decidir quando renomear a tabela tecnica `kits` para `combos/templates`;
-4. adicionar auditoria completa de eventos;
+4. decidir proximos eventos de auditoria para itens fisicos;
 5. expandir testes automatizados antes de novas features cosmeticas.

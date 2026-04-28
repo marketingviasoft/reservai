@@ -10,11 +10,13 @@ import {
   kitItems,
   reservations,
   reservationItems,
+  reservationEvents,
   type InsertCategory,
   type InsertItem,
   type InsertKit,
   type InsertReservation,
   type InsertReservationItem,
+  type InsertReservationEvent,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { nanoid } from "nanoid";
@@ -524,6 +526,81 @@ export async function deleteReservation(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(reservations).where(eq(reservations.id, id));
+}
+
+export type ReservationEventInput = Pick<
+  InsertReservationEvent,
+  "reservationId" | "eventType"
+> &
+  Partial<
+    Pick<
+      InsertReservationEvent,
+      "actorUserId" | "fromStatus" | "toStatus" | "metadata"
+    >
+  >;
+
+export function buildReservationEvent(input: ReservationEventInput): InsertReservationEvent {
+  return {
+    reservationId: input.reservationId,
+    eventType: input.eventType,
+    actorUserId: input.actorUserId ?? null,
+    fromStatus: input.fromStatus ?? null,
+    toStatus: input.toStatus ?? null,
+    metadata: input.metadata ?? {},
+  };
+}
+
+export function buildReservationUpdateMetadata(
+  before: Record<string, unknown>,
+  changes: Record<string, unknown>
+) {
+  const changedFields: Record<string, { from: unknown; to: unknown }> = {};
+  for (const [field, to] of Object.entries(changes)) {
+    if (to === undefined) continue;
+    const from = before[field];
+    if (from !== to) {
+      changedFields[field] = { from: from ?? null, to: to ?? null };
+    }
+  }
+  return { changes: changedFields };
+}
+
+export function collectReservationPhysicalItemIds(
+  reservationItemsData: Array<{ itemId: number | null }>
+) {
+  return uniqueNumbers(
+    reservationItemsData
+      .map((reservationItem) => reservationItem.itemId)
+      .filter((itemId): itemId is number => itemId !== null)
+  );
+}
+
+export async function createReservationEvent(input: ReservationEventInput) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(reservationEvents).values(buildReservationEvent(input));
+}
+
+export async function listReservationEvents(reservationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: reservationEvents.id,
+      reservationId: reservationEvents.reservationId,
+      eventType: reservationEvents.eventType,
+      actorUserId: reservationEvents.actorUserId,
+      actorName: users.name,
+      actorEmail: users.email,
+      fromStatus: reservationEvents.fromStatus,
+      toStatus: reservationEvents.toStatus,
+      metadata: reservationEvents.metadata,
+      createdAt: reservationEvents.createdAt,
+    })
+    .from(reservationEvents)
+    .leftJoin(users, eq(reservationEvents.actorUserId, users.id))
+    .where(eq(reservationEvents.reservationId, reservationId))
+    .orderBy(asc(reservationEvents.createdAt));
 }
 
 // ─── Conflict Detection ─────────────────────────────────────────────────────
