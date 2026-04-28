@@ -264,7 +264,7 @@ async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
       _client = postgres(process.env.DATABASE_URL, {
-        max: 1,
+        max: 3,
         prepare: false,
         connect_timeout: 10,
         idle_timeout: 20
@@ -670,17 +670,26 @@ async function getDashboardStats() {
   const db = await getDb();
   if (!db) return { totalItems: 0, availableItems: 0, lentItems: 0, maintenanceItems: 0, totalKits: 0, totalUsers: 0, activeReservations: 0, pendingReservations: 0, overdueReservations: 0 };
   const now = Date.now();
-  const [itemStats] = await db.select({
-    total: count(),
-    available: sql`SUM(CASE WHEN ${items.status} = 'disponivel' THEN 1 ELSE 0 END)`,
-    lent: sql`SUM(CASE WHEN ${items.status} = 'emprestado' THEN 1 ELSE 0 END)`,
-    maintenance: sql`SUM(CASE WHEN ${items.status} = 'manutencao' THEN 1 ELSE 0 END)`
-  }).from(items);
-  const [kitStats] = await db.select({ total: count() }).from(kits);
-  const [userStats] = await db.select({ total: count() }).from(users);
-  const [activeRes] = await db.select({ total: count() }).from(reservations).where(eq(reservations.status, "ativa"));
-  const [pendingRes] = await db.select({ total: count() }).from(reservations).where(eq(reservations.status, "pendente"));
-  const [overdueRes] = await db.select({ total: count() }).from(reservations).where(and(eq(reservations.status, "ativa"), lte(reservations.endDate, now)));
+  const [
+    [itemStats],
+    [kitStats],
+    [userStats],
+    [activeRes],
+    [pendingRes],
+    [overdueRes]
+  ] = await Promise.all([
+    db.select({
+      total: count(),
+      available: sql`SUM(CASE WHEN ${items.status} = 'disponivel' THEN 1 ELSE 0 END)`,
+      lent: sql`SUM(CASE WHEN ${items.status} = 'emprestado' THEN 1 ELSE 0 END)`,
+      maintenance: sql`SUM(CASE WHEN ${items.status} = 'manutencao' THEN 1 ELSE 0 END)`
+    }).from(items),
+    db.select({ total: count() }).from(kits),
+    db.select({ total: count() }).from(users),
+    db.select({ total: count() }).from(reservations).where(eq(reservations.status, "ativa")),
+    db.select({ total: count() }).from(reservations).where(eq(reservations.status, "pendente")),
+    db.select({ total: count() }).from(reservations).where(and(eq(reservations.status, "ativa"), lte(reservations.endDate, now)))
+  ]);
   return {
     totalItems: itemStats?.total ?? 0,
     availableItems: Number(itemStats?.available ?? 0),

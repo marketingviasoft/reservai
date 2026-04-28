@@ -29,7 +29,12 @@ export function AuthForm() {
           password,
         });
         if (error) throw error;
-        await utils.auth.me.invalidate();
+        const user = await utils.auth.me.fetch();
+        if (!user) {
+          throw new Error(
+            "Login feito no Supabase, mas o ReservAI ainda nao reconheceu a sessao. Tente atualizar a pagina.",
+          );
+        }
         toast.success("Login realizado");
       } else {
         const { data, error } = await supabase.auth.signUp({
@@ -43,8 +48,13 @@ export function AuthForm() {
           },
         });
         if (error) throw error;
-        await utils.auth.me.invalidate();
         if (data.session) {
+          const user = await utils.auth.me.fetch();
+          if (!user) {
+            throw new Error(
+              "Conta criada, mas o ReservAI ainda nao reconheceu a sessao. Tente atualizar a pagina.",
+            );
+          }
           toast.success("Conta criada");
         } else {
           toast.success("Conta criada. Verifique seu e-mail para confirmar o acesso.");
