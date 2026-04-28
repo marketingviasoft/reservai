@@ -88,6 +88,7 @@ const emptyForm: ReservationForm = {
 
 export default function Reservations() {
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const utils = trpc.useUtils();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -264,6 +265,9 @@ export default function Reservations() {
   }, [allKits]);
 
   const hasDatesSelected = !!availabilityDates;
+  const canCancelReservation = (reservation: any) => {
+    return (isAdmin || reservation.userId === user?.id) && reservation.status === "pendente";
+  };
 
   return (
     <div className="space-y-6">
@@ -271,7 +275,9 @@ export default function Reservations() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Reservas</h1>
           <p className="text-muted-foreground mt-0.5 text-sm">
-            Gerencie todas as reservas de equipamentos.
+            {isAdmin
+              ? "Gerencie todas as reservas de equipamentos."
+              : "Acompanhe e gerencie suas solicitações de reserva."}
           </p>
         </div>
         <Button
@@ -410,7 +416,7 @@ export default function Reservations() {
                     >
                       <Eye className="h-3.5 w-3.5" />
                     </Button>
-                    {(r.status === "pendente" || r.status === "ativa") && (
+                    {canCancelReservation(r) && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -756,7 +762,7 @@ export default function Reservations() {
           <AlertDialogHeader>
             <AlertDialogTitle>Cancelar reserva?</AlertDialogTitle>
             <AlertDialogDescription>
-              A reserva será cancelada e os itens ficarão disponíveis novamente.
+              A reserva pendente será cancelada. Reservas ativas devem ser encerradas via check-in.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

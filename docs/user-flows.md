@@ -47,28 +47,37 @@
    - pelo menos um item disponivel precisa existir.
 5. Reserva e criada como `pendente`.
 6. Itens fisicos sao persistidos em `reservation_items.itemId`.
+7. A reserva fica vinculada ao usuario autenticado que criou a solicitacao.
 
 ## Cancelamento e edicao de reserva
 
 1. Usuario solicita update ou cancelamento.
 2. Backend verifica se o usuario e dono da reserva ou admin.
-3. Usuario comum nao pode alterar status diretamente.
-4. Ao cancelar uma reserva ativa, itens sao devolvidos para `disponivel`.
+3. Usuario comum so pode editar a propria reserva enquanto ela estiver `pendente`.
+4. Usuario comum so pode cancelar a propria reserva enquanto ela estiver `pendente`.
+5. Admin pode cancelar reservas `pendente`.
+6. Reservas `ativa` nao podem ser canceladas; devem ser encerradas via check-in.
+7. Reservas `concluida` e `cancelada` nao podem ser canceladas.
+8. Alteracao manual de status pela rota de update e bloqueada; status muda por cancelamento, check-out ou check-in.
 
 ## Check-out
 
-1. Admin executa check-out em uma reserva `pendente`.
-2. Reserva passa para `ativa`.
-3. Backend registra data e usuario operador.
-4. Itens da reserva passam para `emprestado`.
+1. Somente admin acessa a operacao de check-out na UI.
+2. Backend tambem exige admin para executar check-out.
+3. Admin executa check-out em uma reserva `pendente`.
+4. Reserva passa para `ativa`.
+5. Backend registra data e usuario operador.
+6. Itens da reserva passam para `emprestado`.
 
 ## Check-in
 
-1. Admin executa check-in em uma reserva `ativa`.
-2. Reserva passa para `concluida`.
-3. Backend registra data e usuario operador.
-4. Itens da reserva voltam para `disponivel`.
-5. Kits afetados podem ter status recalculado.
+1. Somente admin acessa a operacao de check-in na UI.
+2. Backend tambem exige admin para executar check-in.
+3. Admin executa check-in em uma reserva `ativa`.
+4. Reserva passa para `concluida`.
+5. Backend registra data e usuario operador.
+6. Itens da reserva voltam para `disponivel`.
+7. Kits afetados podem ter status recalculado.
 
 ## Calendario
 

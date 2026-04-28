@@ -1,10 +1,16 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import { storagePut } from "./storage";
-import { assertAdminReservationOperator, assertReservationOwnerOrAdmin } from "./reservationAccess";
+import {
+  assertAdminReservationOperator,
+  assertCanCancelReservation,
+  assertCanUpdateReservation,
+  assertReservationOwnerOrAdmin,
+} from "./reservationAccess";
 import { buildReservationItemSelection } from "./reservationSelection";
 
 // ─── Category Router ─────────────────────────────────────────────────────────
@@ -156,7 +162,15 @@ const profileRouter = router({
   // Histórico de reservas de um colaborador
   reservations: protectedProcedure
     .input(z.object({ userId: z.number() }))
-    .query(({ input }) => db.getUserReservationHistory(input.userId)),
+    .query(({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && input.userId !== ctx.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Voce so pode consultar seu proprio historico de reservas.",
+        });
+      }
+      return db.getUserReservationHistory(input.userId);
+    }),
 });
 
 // ─── Reservation Router ──────────────────────────────────────────────────────
@@ -169,10 +183,21 @@ const reservationRouter = router({
       startDate: z.number().optional(),
       endDate: z.number().optional(),
     }).optional())
-    .query(({ input }) => db.listReservations(input)),
+    .query(({ ctx, input }) =>
+      db.listReservations(
+        ctx.user.role === "admin"
+          ? input
+          : { ...input, userId: ctx.user.id }
+      )
+    ),
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(({ input }) => db.getReservationById(input.id)),
+    .query(async ({ ctx, input }) => {
+      const reservation = await db.getReservationById(input.id);
+      if (!reservation) throw new Error("Reserva não encontrada");
+      assertReservationOwnerOrAdmin(ctx.user, reservation);
+      return reservation;
+    }),
   create: protectedProcedure
     .input(z.object({
       startDate: z.number(),
@@ -222,9 +247,12 @@ const reservationRouter = router({
     .mutation(async ({ ctx, input }) => {
       const reservation = await db.getReservationById(input.id);
       if (!reservation) throw new Error("Reserva não encontrada");
-      assertReservationOwnerOrAdmin(ctx.user, reservation);
-      if (ctx.user.role !== "admin" && input.status !== undefined) {
-        throw new Error("Apenas administradores podem alterar o status da reserva");
+      assertCanUpdateReservation(ctx.user, reservation);
+      if (input.status !== undefined) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Status de reserva deve ser alterado pelos fluxos de cancelamento, check-out ou check-in.",
+        });
       }
       const { id, ...data } = input;
       return db.updateReservation(id, data);
@@ -234,11 +262,18 @@ const reservationRouter = router({
     .mutation(async ({ ctx, input }) => {
       const reservation = await db.getReservationById(input.id);
       if (!reservation) throw new Error("Reserva não encontrada");
-      assertReservationOwnerOrAdmin(ctx.user, reservation);
+      assertCanCancelReservation(ctx.user, reservation);
       await db.updateReservation(input.id, { status: "cancelada" });
       if (reservation.status === "ativa") {
         for (const ri of reservation.reservationItems) {
           if (ri.itemId) await db.updateItem(ri.itemId, { status: "disponivel" });
+          if (ri.kitId) {
+            const kitItemIds = await db.getKitItemIds([ri.kitId]);
+            for (const itemId of kitItemIds) {
+              await db.updateItem(itemId, { status: "disponivel" });
+            }
+            await db.recalculateKitStatus(ri.kitId);
+          }
         }
       }
     }),

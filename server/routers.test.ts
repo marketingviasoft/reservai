@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import { COOKIE_NAME } from "../shared/const";
 import type { TrpcContext } from "./_core/context";
-import { assertAdminReservationOperator, assertReservationOwnerOrAdmin } from "./reservationAccess";
+import {
+  assertAdminReservationOperator,
+  assertCanCancelReservation,
+  assertCanUpdateReservation,
+  assertReservationOwnerOrAdmin,
+  canCancelReservation,
+} from "./reservationAccess";
 import { buildReservationItemSelection } from "./reservationSelection";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
@@ -257,19 +263,77 @@ describe("reservation router - access control", () => {
     ).rejects.toThrow();
   });
 
-  it("allows reservation owner to update or cancel their own reservation", () => {
+  it("allows reservation owner to update their own pending reservation", () => {
     const user = createMockUser({ role: "user", id: 7 });
-    expect(() => assertReservationOwnerOrAdmin(user, { userId: 7 })).not.toThrow();
+    expect(() =>
+      assertCanUpdateReservation(user, { userId: 7, status: "pendente" })
+    ).not.toThrow();
   });
 
-  it("allows admin to update or cancel any reservation", () => {
+  it("allows admin to update reservations from other users", () => {
     const user = createMockUser({ role: "admin", id: 1 });
-    expect(() => assertReservationOwnerOrAdmin(user, { userId: 7 })).not.toThrow();
+    expect(() =>
+      assertCanUpdateReservation(user, { userId: 7, status: "ativa" })
+    ).not.toThrow();
   });
 
-  it("rejects regular user from updating or canceling another user's reservation", () => {
+  it("rejects regular user from updating another user's reservation", () => {
     const user = createMockUser({ role: "user", id: 2 });
-    expect(() => assertReservationOwnerOrAdmin(user, { userId: 7 })).toThrow();
+    expect(() =>
+      assertCanUpdateReservation(user, { userId: 7, status: "pendente" })
+    ).toThrow();
+  });
+
+  it("allows regular user to cancel their own pending reservation", () => {
+    const user = createMockUser({ role: "user", id: 7 });
+    const reservation = { userId: 7, status: "pendente" };
+    expect(canCancelReservation(user, reservation)).toBe(true);
+    expect(() => assertCanCancelReservation(user, reservation)).not.toThrow();
+  });
+
+  it("rejects regular user from canceling their own active reservation", () => {
+    const user = createMockUser({ role: "user", id: 7 });
+    const reservation = { userId: 7, status: "ativa" };
+    expect(canCancelReservation(user, reservation)).toBe(false);
+    expect(() => assertCanCancelReservation(user, reservation)).toThrow();
+  });
+
+  it("rejects regular user from canceling another user's pending reservation", () => {
+    const user = createMockUser({ role: "user", id: 2 });
+    expect(() =>
+      assertCanCancelReservation(user, { userId: 7, status: "pendente" })
+    ).toThrow();
+  });
+
+  it("allows admin to cancel pending reservations", () => {
+    const user = createMockUser({ role: "admin", id: 1 });
+    expect(() =>
+      assertCanCancelReservation(user, { userId: 7, status: "pendente" })
+    ).not.toThrow();
+  });
+
+  it("rejects admin from canceling active reservations", () => {
+    const user = createMockUser({ role: "admin", id: 1 });
+    expect(() =>
+      assertCanCancelReservation(user, { userId: 7, status: "ativa" })
+    ).toThrow("Reservas ativas devem ser encerradas via check-in.");
+  });
+
+  it("uses a clear check-in guidance message for active reservations", () => {
+    const user = createMockUser({ role: "user", id: 7 });
+    expect(() =>
+      assertCanCancelReservation(user, { userId: 7, status: "ativa" })
+    ).toThrow("Reservas ativas devem ser encerradas via check-in.");
+  });
+
+  it("rejects canceling concluded or already canceled reservations", () => {
+    const user = createMockUser({ role: "admin", id: 1 });
+    expect(() =>
+      assertCanCancelReservation(user, { userId: 7, status: "concluida" })
+    ).toThrow();
+    expect(() =>
+      assertCanCancelReservation(user, { userId: 7, status: "cancelada" })
+    ).toThrow();
   });
 
   it("rejects regular user from operating check-in and check-out", () => {
@@ -280,6 +344,11 @@ describe("reservation router - access control", () => {
   it("allows admin to operate check-in and check-out", () => {
     const user = createMockUser({ role: "admin" });
     expect(() => assertAdminReservationOperator(user)).not.toThrow();
+  });
+
+  it("still allows admin to view reservations from other users", () => {
+    const user = createMockUser({ role: "admin", id: 1 });
+    expect(() => assertReservationOwnerOrAdmin(user, { userId: 7 })).not.toThrow();
   });
 });
 

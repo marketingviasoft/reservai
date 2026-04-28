@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-04-28 - Cancelamento de reservas ativas bloqueado
+
+Resumo:
+
+- Cancelamento agora e permitido somente para reservas `pendente`.
+- Reservas `ativa` sao rejeitadas para qualquer papel e devem ser encerradas via check-in.
+- UI de Reservas nao exibe cancelamento em reservas ativas.
+- Testes cobrem colaborador/admin em reservas `pendente`, `ativa`, `concluida` e `cancelada`, incluindo mensagem de erro de check-in.
+
+Comandos executados:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou fora do sandbox. Resultado: 2 arquivos, 42 testes.
+- `corepack pnpm build`: passou fora do sandbox; manteve apenas o alerta ja conhecido de chunk frontend acima de 500 kB.
+
+## 2026-04-28 - Endurecimento de permissoes de reservas
+
+Resumo:
+
+- Listagem e detalhe de reservas agora respeitam escopo: admin ve tudo; colaborador ve apenas reservas proprias.
+- Cancelamento ficou restrito a status validos: colaborador cancela propria reserva `pendente`; admin cancela `pendente`.
+- Check-out e check-in seguem restritos a admin no backend.
+- A rota de update nao permite alteracao manual de status; transicoes passam pelos fluxos dedicados.
+- UI de Reservas esconde cancelamento indevido para colaborador comum.
+- UI de Check-in/Check-out exibe area restrita para usuarios nao-admin.
+- Testes de permissao foram expandidos.
+
+Comandos executados:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou fora do sandbox. Resultado: 2 arquivos, 40 testes.
+- `corepack pnpm build`: passou fora do sandbox; manteve apenas o alerta ja conhecido de chunk frontend acima de 500 kB.
+
 ## 2026-04-28 - Cadastro de equipamentos fisicos
 
 Resumo:

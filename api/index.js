@@ -67,6 +67,7 @@ var adminProcedure = t.procedure.use(
 );
 
 // server/routers.ts
+import { TRPCError as TRPCError3 } from "@trpc/server";
 import { z } from "zod";
 
 // server/db.ts
@@ -889,20 +890,45 @@ async function storagePut(relKey, data, contentType = "application/octet-stream"
 
 // server/reservationAccess.ts
 import { TRPCError as TRPCError2 } from "@trpc/server";
+function isAdmin(actor) {
+  return actor.role === "admin";
+}
 function assertReservationOwnerOrAdmin(actor, reservation) {
-  if (actor.role === "admin") return;
+  if (isAdmin(actor)) return;
   if (reservation.userId !== actor.id) {
     throw new TRPCError2({
       code: "FORBIDDEN",
-      message: "Voce so pode alterar reservas vinculadas ao seu usuario."
+      message: "Voce so pode acessar reservas vinculadas ao seu usuario."
     });
   }
 }
 function assertAdminReservationOperator(actor) {
-  if (actor.role !== "admin") {
+  if (!isAdmin(actor)) {
     throw new TRPCError2({
       code: "FORBIDDEN",
       message: "Apenas administradores podem operar check-in e check-out."
+    });
+  }
+}
+function canCancelReservation(actor, reservation) {
+  return (isAdmin(actor) || reservation.userId === actor.id) && reservation.status === "pendente";
+}
+function assertCanCancelReservation(actor, reservation) {
+  assertReservationOwnerOrAdmin(actor, reservation);
+  if (canCancelReservation(actor, reservation)) return;
+  const message = reservation.status === "ativa" ? "Reservas ativas devem ser encerradas via check-in." : "Apenas reservas pendentes podem ser canceladas.";
+  throw new TRPCError2({
+    code: "FORBIDDEN",
+    message
+  });
+}
+function assertCanUpdateReservation(actor, reservation) {
+  assertReservationOwnerOrAdmin(actor, reservation);
+  if (isAdmin(actor)) return;
+  if (reservation.status !== "pendente") {
+    throw new TRPCError2({
+      code: "FORBIDDEN",
+      message: "Voce so pode editar reservas proprias que ainda estejam pendentes."
     });
   }
 }
@@ -1030,7 +1056,15 @@ var profileRouter = router({
   // Admin altera role
   updateRole: adminProcedure.input(z.object({ id: z.number(), role: z.enum(["user", "admin"]) })).mutation(({ input }) => updateUserRole(input.id, input.role)),
   // Histórico de reservas de um colaborador
-  reservations: protectedProcedure.input(z.object({ userId: z.number() })).query(({ input }) => getUserReservationHistory(input.userId))
+  reservations: protectedProcedure.input(z.object({ userId: z.number() })).query(({ ctx, input }) => {
+    if (ctx.user.role !== "admin" && input.userId !== ctx.user.id) {
+      throw new TRPCError3({
+        code: "FORBIDDEN",
+        message: "Voce so pode consultar seu proprio historico de reservas."
+      });
+    }
+    return getUserReservationHistory(input.userId);
+  })
 });
 var reservationRouter = router({
   list: protectedProcedure.input(z.object({
@@ -1039,8 +1073,17 @@ var reservationRouter = router({
     search: z.string().optional(),
     startDate: z.number().optional(),
     endDate: z.number().optional()
-  }).optional()).query(({ input }) => listReservations(input)),
-  getById: protectedProcedure.input(z.object({ id: z.number() })).query(({ input }) => getReservationById(input.id)),
+  }).optional()).query(
+    ({ ctx, input }) => listReservations(
+      ctx.user.role === "admin" ? input : { ...input, userId: ctx.user.id }
+    )
+  ),
+  getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+    const reservation = await getReservationById(input.id);
+    if (!reservation) throw new Error("Reserva n\xE3o encontrada");
+    assertReservationOwnerOrAdmin(ctx.user, reservation);
+    return reservation;
+  }),
   create: protectedProcedure.input(z.object({
     startDate: z.number(),
     endDate: z.number(),
@@ -1076,9 +1119,12 @@ var reservationRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const reservation = await getReservationById(input.id);
     if (!reservation) throw new Error("Reserva n\xE3o encontrada");
-    assertReservationOwnerOrAdmin(ctx.user, reservation);
-    if (ctx.user.role !== "admin" && input.status !== void 0) {
-      throw new Error("Apenas administradores podem alterar o status da reserva");
+    assertCanUpdateReservation(ctx.user, reservation);
+    if (input.status !== void 0) {
+      throw new TRPCError3({
+        code: "BAD_REQUEST",
+        message: "Status de reserva deve ser alterado pelos fluxos de cancelamento, check-out ou check-in."
+      });
     }
     const { id, ...data } = input;
     return updateReservation(id, data);
@@ -1086,11 +1132,18 @@ var reservationRouter = router({
   cancel: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const reservation = await getReservationById(input.id);
     if (!reservation) throw new Error("Reserva n\xE3o encontrada");
-    assertReservationOwnerOrAdmin(ctx.user, reservation);
+    assertCanCancelReservation(ctx.user, reservation);
     await updateReservation(input.id, { status: "cancelada" });
     if (reservation.status === "ativa") {
       for (const ri of reservation.reservationItems) {
         if (ri.itemId) await updateItem(ri.itemId, { status: "disponivel" });
+        if (ri.kitId) {
+          const kitItemIds = await getKitItemIds([ri.kitId]);
+          for (const itemId of kitItemIds) {
+            await updateItem(itemId, { status: "disponivel" });
+          }
+          await recalculateKitStatus(ri.kitId);
+        }
       }
     }
   }),

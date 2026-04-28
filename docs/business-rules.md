@@ -64,8 +64,16 @@ No banco, o papel `user` representa o colaborador comum.
 ## Permissoes de reserva
 
 - Criacao de reserva exige usuario autenticado.
-- Edicao e cancelamento exigem que o usuario seja dono da reserva ou admin.
+- Admin visualiza todas as reservas.
+- Colaborador comum visualiza somente reservas vinculadas ao seu usuario.
+- Colaborador comum pode editar somente reservas proprias em status `pendente`.
+- Colaborador comum pode cancelar somente reservas proprias em status `pendente`.
+- Admin pode cancelar reservas `pendente`.
+- Reservas `ativa`, `concluida` ou `cancelada` nao podem ser canceladas.
+- Reservas `ativa` devem ser encerradas via check-in.
 - Usuario comum nao pode alterar status diretamente.
+- A rota de update nao permite alteracao manual de status; transicoes devem passar por cancelamento, check-out ou check-in.
+- Check-out e check-in exigem admin no backend, mesmo que alguem tente chamar a API diretamente.
 - Exclusao de reserva exige admin.
 
 ## Pontos ainda abertos

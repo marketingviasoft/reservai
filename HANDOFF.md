@@ -106,7 +106,9 @@ Pontos aderentes:
 - historico basico por status de reserva;
 - bloqueio de double-booking por item e por kit compartilhado;
 - `checkout` e `checkin` restritos a admin;
-- `update` e `cancel` de reserva restritos ao dono da reserva ou admin;
+- listagem e detalhe de reservas restritos por papel: admin ve tudo, colaborador ve apenas as proprias;
+- `update` de reserva restrito ao dono enquanto pendente ou admin, sem alteracao manual de status;
+- `cancel` restrito a reservas pendentes; reservas ativas devem ser encerradas via check-in;
 - criacao de reserva persistindo itens fisicos individuais em `reservation_items.itemId`;
 - cadastro de equipamento separando `status` operacional de `condition` fisica.
 
@@ -122,7 +124,7 @@ Pontos ainda desalinhados:
 
 - O repositorio ainda carrega alguns artefatos do template anterior, principalmente em `server/_core/*`, `client/public/__manus__/*` e plugins Manus no `vite.config.ts`. Eles sustentam parte do bootstrap atual, mas nao fazem parte do dominio central do ReservAI.
 - A tela e o backend de `Kits` funcionam, mas representam uma decisao de produto que provavelmente precisara ser revisada para alinhar ao modelo final de combos/templates.
-- O controle de acesso de reservas foi endurecido no estado atual: `cancel` e `update` validam dono/admin, e `checkout`/`checkin` exigem admin. Ainda falta decidir se havera papel operacional separado de admin.
+- O controle de acesso de reservas foi endurecido no estado atual: colaborador ve apenas reservas proprias, `cancel` e `update` validam dono/status, `checkout`/`checkin` exigem admin. Reserva ativa nao pode ser cancelada; deve passar por check-in. Ainda falta decidir se havera papel operacional separado de admin.
 - O build passa, mas o Vite alerta que o bundle frontend principal passa de 500 kB apos minificacao. Isso nao bloqueia deploy, mas pode virar pauta de otimizacao.
 
 ## 3. Stack Tecnologico
@@ -204,8 +206,24 @@ Estado atual no codigo:
 - o banco usa `role = "admin" | "user"`;
 - `user` deve ser interpretado como o papel de colaborador;
 - itens, categorias e kits ja estao protegidos para admin nas mutacoes;
-- reservas validam dono/admin para `update` e `cancel`;
-- check-out e check-in exigem admin.
+- reservas validam escopo por papel em listagem e detalhe;
+- reservas validam dono/status para `update` e `cancel`;
+- check-out e check-in exigem admin;
+- update manual de `status` e bloqueado para preservar transicoes pelos fluxos dedicados.
+
+Estado atual das permissoes de reserva:
+
+- colaborador comum cria reserva apenas para si mesmo;
+- colaborador comum lista e consulta detalhes apenas das proprias reservas;
+- colaborador comum pode editar apenas a propria reserva `pendente`;
+- colaborador comum pode cancelar apenas a propria reserva `pendente`;
+- colaborador comum nao faz check-out nem check-in;
+- admin lista e consulta todas as reservas;
+- admin opera check-out de reserva `pendente`;
+- admin opera check-in de reserva `ativa`;
+- admin cancela reservas `pendente`;
+- reservas `ativa`, `concluida` e `cancelada` nao podem ser canceladas;
+- reservas `ativa` devem ser encerradas via check-in.
 
 ### Cadastro de equipamentos
 
@@ -474,8 +492,8 @@ Opcional, mas fortemente recomendado:
 ### Prioridade 2 - endurecer seguranca e RBAC
 
 - Decidir se `admin` continua sendo o unico papel operacional para check-in/check-out ou se havera um papel de logistica.
-- Revisar quais leituras um colaborador comum pode fazer: tudo, somente reservas proprias, ou visao interna global.
-- Expandir testes de permissao com cenarios integrados de reserva.
+- Decidir se colaboradores devem continuar vendo somente reservas proprias ou se uma visao interna parcial sera necessaria no futuro.
+- Expandir testes integrados de reserva com banco de teste quando houver ambiente dedicado.
 
 ### Prioridade 3 - fortalecer a trilha de auditoria
 

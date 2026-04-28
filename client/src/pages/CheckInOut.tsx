@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   User,
   History,
+  Lock,
 } from "lucide-react";
 import { useState } from "react";
 import { format } from "date-fns";
@@ -33,6 +34,7 @@ import { ptBR } from "date-fns/locale";
 
 export default function CheckInOut() {
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const utils = trpc.useUtils();
   const [confirmAction, setConfirmAction] = useState<{
     type: "checkout" | "checkin";
@@ -41,11 +43,11 @@ export default function CheckInOut() {
   } | null>(null);
 
   const { data: pendingReservations, isLoading: pendingLoading } =
-    trpc.reservation.list.useQuery({ status: "pendente" });
+    trpc.reservation.list.useQuery({ status: "pendente" }, { enabled: isAdmin });
   const { data: activeReservations, isLoading: activeLoading } =
-    trpc.reservation.list.useQuery({ status: "ativa" });
+    trpc.reservation.list.useQuery({ status: "ativa" }, { enabled: isAdmin });
   const { data: completedReservations, isLoading: completedLoading } =
-    trpc.reservation.list.useQuery({ status: "concluida" });
+    trpc.reservation.list.useQuery({ status: "concluida" }, { enabled: isAdmin });
 
   const checkoutMutation = trpc.reservation.checkout.useMutation({
     onSuccess: () => {
@@ -227,7 +229,21 @@ export default function CheckInOut() {
         </p>
       </div>
 
-      <Tabs defaultValue="checkout" className="w-full">
+      {!isAdmin && (
+        <Card className="border-0 shadow-sm">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
+              <Lock className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <p className="font-medium">Operação restrita a administradores</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-md">
+              Colaboradores podem criar e acompanhar as próprias reservas, mas check-out e check-in são operações administrativas.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && <Tabs defaultValue="checkout" className="w-full">
         <TabsList className="grid w-full max-w-lg grid-cols-3">
           <TabsTrigger value="checkout" className="gap-2">
             <LogOut className="h-4 w-4" />
@@ -368,7 +384,7 @@ export default function CheckInOut() {
             </div>
           )}
         </TabsContent>
-      </Tabs>
+      </Tabs>}
 
       {/* Confirmation Dialog */}
       <AlertDialog open={confirmAction !== null} onOpenChange={() => setConfirmAction(null)}>
