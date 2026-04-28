@@ -57,6 +57,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useSearch } from "wouter";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { buildComboCartUpdate } from "@shared/reservationSelection";
 
 const statusLabels: Record<string, string> = {
   pendente: "Pendente",
@@ -205,21 +206,39 @@ export default function Reservations() {
       .filter((itemId: number) => !availability?.unavailableItemIds?.includes(itemId));
 
   const applyCombo = (kit: any) => {
-    const selectableItemIds = getComboSelectableItemIds(kit);
-    const totalItems = kit.items?.length || 0;
-    if (selectableItemIds.length === 0) {
-      toast.warning("Nenhum item deste combo está disponível para o período selecionado");
+    const comboItemIds = (kit.items || [])
+      .filter((item: any) => item.itemStatus === "disponivel")
+      .map((item: any) => item.itemId);
+    const update = buildComboCartUpdate({
+      currentItemIds: form.selectedItemIds,
+      comboItemIds,
+      unavailableItemIds: availability?.unavailableItemIds ?? [],
+    });
+
+    if (update.addedItemIds.length === 0) {
+      if (update.skippedItemIds.length > 0) {
+        toast.warning("Nenhum item deste combo está disponível para o período selecionado");
+      } else {
+        toast.info("Todos os itens disponíveis deste combo já estão no carrinho");
+      }
       return;
     }
 
     setForm((prev) => ({
       ...prev,
-      selectedItemIds: Array.from(new Set([...prev.selectedItemIds, ...selectableItemIds])),
+      selectedItemIds: update.itemIds,
     }));
 
-    const skippedCount = totalItems - selectableItemIds.length;
-    if (skippedCount > 0) {
-      toast.warning(`${skippedCount} item(ns) indisponível(is) foram ignorados`);
+    if (update.skippedItemIds.length > 0) {
+      const skippedNames = (kit.items || [])
+        .filter((item: any) => update.skippedItemIds.includes(item.itemId))
+        .map((item: any) => item.itemName)
+        .filter(Boolean);
+      toast.warning(
+        skippedNames.length > 0
+          ? `Alguns itens deste combo não foram adicionados porque estão indisponíveis no período selecionado: ${skippedNames.join(", ")}.`
+          : "Alguns itens deste combo não foram adicionados porque estão indisponíveis no período selecionado."
+      );
     } else {
       toast.success("Combo adicionado ao carrinho");
     }

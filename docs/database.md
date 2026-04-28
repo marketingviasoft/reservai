@@ -87,7 +87,13 @@ Observacoes:
 
 ### `kits`
 
-Agrupamentos de itens usados atualmente como kits/combos.
+Tabela tecnica de agrupamentos reutilizaveis, exibidos para o usuario como Combos.
+
+Decisao de compatibilidade:
+
+- A tabela permanece com o nome `kits` nesta etapa para evitar refatoracao/migracao agressiva.
+- No dominio atual, esses registros nao representam ativos reservaveis.
+- Eles servem apenas como atalhos para selecionar itens fisicos no carrinho.
 
 Campos principais:
 
@@ -143,7 +149,10 @@ Campos principais:
 Estado atual:
 
 - O fluxo de criacao persiste itens fisicos em `itemId`.
-- `kitId` permanece no schema por compatibilidade, mas nao deve ser tratado como unidade final de bloqueio em novas melhorias.
+- Novas reservas gravam `kitId = null`.
+- `kitId` permanece no schema por compatibilidade temporaria com reservas antigas, se existirem.
+- `kitId` nao deve ser tratado como unidade real de reserva ou bloqueio.
+- A disponibilidade e calculada por equipamento fisico (`itemId`) e por reservas `pendente` ou `ativa`.
 
 ## Variaveis de ambiente relacionadas
 

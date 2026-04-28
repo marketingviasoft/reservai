@@ -259,6 +259,32 @@ var ENV = {
 
 // server/db.ts
 import { nanoid } from "nanoid";
+
+// shared/reservationSelection.ts
+function uniqueNumbers(values) {
+  return Array.from(new Set(values));
+}
+function buildReservationItemSelection({
+  directItemIds,
+  comboItemIds,
+  unavailableItemIds
+}) {
+  const unavailable = new Set(unavailableItemIds);
+  const conflictingDirectItemIds = directItemIds.filter((id) => unavailable.has(id));
+  const availableComboItemIds = comboItemIds.filter((id) => !unavailable.has(id));
+  const skippedComboItemIds = comboItemIds.filter((id) => unavailable.has(id));
+  const itemIds = uniqueNumbers([...directItemIds, ...availableComboItemIds]);
+  return {
+    itemIds,
+    conflictingDirectItemIds: uniqueNumbers(conflictingDirectItemIds),
+    skippedComboItemIds: uniqueNumbers(skippedComboItemIds)
+  };
+}
+
+// shared/reservationStatus.ts
+var RESERVATION_BLOCKING_STATUSES = ["pendente", "ativa"];
+
+// server/db.ts
 function generateItemCode() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const id = nanoid(5);
@@ -625,16 +651,18 @@ async function createReservation(data, itemIds) {
   if (!db) throw new Error("DB not available");
   const [created] = await db.insert(reservations).values(data).returning({ id: reservations.id });
   const reservationId = created.id;
-  const uniqueItemIds = Array.from(new Set(itemIds));
-  const resItems = uniqueItemIds.map((itemId) => ({
-    reservationId,
-    itemId,
-    kitId: null
-  }));
+  const resItems = buildPhysicalReservationItems(reservationId, itemIds);
   if (resItems.length > 0) {
     await db.insert(reservationItems).values(resItems);
   }
   return { id: reservationId };
+}
+function buildPhysicalReservationItems(reservationId, itemIds) {
+  return uniqueNumbers(itemIds).map((itemId) => ({
+    reservationId,
+    itemId,
+    kitId: null
+  }));
 }
 async function updateReservation(id, data) {
   const db = await getDb();
@@ -654,7 +682,7 @@ async function checkItemConflicts(itemIds, startDate, endDate, excludeReservatio
     inArray(reservationItems.itemId, itemIds),
     lte(reservations.startDate, endDate),
     gte(reservations.endDate, startDate),
-    or(eq(reservations.status, "pendente"), eq(reservations.status, "ativa"))
+    inArray(reservations.status, RESERVATION_BLOCKING_STATUSES)
   ];
   if (excludeReservationId) {
     conditions.push(ne(reservations.id, excludeReservationId));
@@ -676,7 +704,7 @@ async function checkKitConflicts(kitIds, startDate, endDate, excludeReservationI
     inArray(reservationItems.kitId, kitIds),
     lte(reservations.startDate, endDate),
     gte(reservations.endDate, startDate),
-    or(eq(reservations.status, "pendente"), eq(reservations.status, "ativa"))
+    inArray(reservations.status, RESERVATION_BLOCKING_STATUSES)
   ];
   if (excludeReservationId) {
     kitConditions.push(ne(reservations.id, excludeReservationId));
@@ -772,7 +800,7 @@ async function checkAvailability(startDate, endDate, excludeReservationId) {
   const overlapConditions = [
     lte(reservations.startDate, endDate),
     gte(reservations.endDate, startDate),
-    or(eq(reservations.status, "pendente"), eq(reservations.status, "ativa"))
+    inArray(reservations.status, RESERVATION_BLOCKING_STATUSES)
   ];
   if (excludeReservationId) {
     overlapConditions.push(ne(reservations.id, excludeReservationId));
@@ -931,24 +959,6 @@ function assertCanUpdateReservation(actor, reservation) {
       message: "Voce so pode editar reservas proprias que ainda estejam pendentes."
     });
   }
-}
-
-// server/reservationSelection.ts
-function buildReservationItemSelection({
-  directItemIds,
-  comboItemIds,
-  unavailableItemIds
-}) {
-  const unavailable = new Set(unavailableItemIds);
-  const conflictingDirectItemIds = directItemIds.filter((id) => unavailable.has(id));
-  const availableComboItemIds = comboItemIds.filter((id) => !unavailable.has(id));
-  const skippedComboItemIds = comboItemIds.filter((id) => unavailable.has(id));
-  const itemIds = Array.from(/* @__PURE__ */ new Set([...directItemIds, ...availableComboItemIds]));
-  return {
-    itemIds,
-    conflictingDirectItemIds: Array.from(new Set(conflictingDirectItemIds)),
-    skippedComboItemIds: Array.from(new Set(skippedComboItemIds))
-  };
 }
 
 // server/routers.ts

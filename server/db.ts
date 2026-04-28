@@ -18,6 +18,8 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { nanoid } from "nanoid";
+import { uniqueNumbers } from "../shared/reservationSelection";
+import { RESERVATION_BLOCKING_STATUSES } from "../shared/reservationStatus";
 
 // Generate unique equipment code: EQP-XXXXX (uppercase alphanumeric)
 function generateItemCode(): string {
@@ -494,16 +496,22 @@ export async function createReservation(data: InsertReservation, itemIds: number
   const [created] = await db.insert(reservations).values(data).returning({ id: reservations.id });
   const reservationId = created.id;
 
-  const uniqueItemIds = Array.from(new Set(itemIds));
-  const resItems: InsertReservationItem[] = uniqueItemIds.map((itemId) => ({
-    reservationId,
-    itemId,
-    kitId: null,
-  }));
+  const resItems = buildPhysicalReservationItems(reservationId, itemIds);
   if (resItems.length > 0) {
     await db.insert(reservationItems).values(resItems);
   }
   return { id: reservationId };
+}
+
+export function buildPhysicalReservationItems(
+  reservationId: number,
+  itemIds: number[]
+): InsertReservationItem[] {
+  return uniqueNumbers(itemIds).map((itemId) => ({
+    reservationId,
+    itemId,
+    kitId: null,
+  }));
 }
 
 export async function updateReservation(id: number, data: Partial<InsertReservation>) {
@@ -533,7 +541,7 @@ export async function checkItemConflicts(
     inArray(reservationItems.itemId, itemIds),
     lte(reservations.startDate, endDate),
     gte(reservations.endDate, startDate),
-    or(eq(reservations.status, "pendente"), eq(reservations.status, "ativa")),
+    inArray(reservations.status, RESERVATION_BLOCKING_STATUSES),
   ];
   if (excludeReservationId) {
     conditions.push(ne(reservations.id, excludeReservationId));
@@ -568,7 +576,7 @@ export async function checkKitConflicts(
     inArray(reservationItems.kitId, kitIds),
     lte(reservations.startDate, endDate),
     gte(reservations.endDate, startDate),
-    or(eq(reservations.status, "pendente"), eq(reservations.status, "ativa")),
+    inArray(reservations.status, RESERVATION_BLOCKING_STATUSES),
   ];
   if (excludeReservationId) {
     kitConditions.push(ne(reservations.id, excludeReservationId));
@@ -724,7 +732,7 @@ export async function checkAvailability(
   const overlapConditions = [
     lte(reservations.startDate, endDate),
     gte(reservations.endDate, startDate),
-    or(eq(reservations.status, "pendente"), eq(reservations.status, "ativa")),
+    inArray(reservations.status, RESERVATION_BLOCKING_STATUSES),
   ];
   if (excludeReservationId) {
     overlapConditions.push(ne(reservations.id, excludeReservationId));

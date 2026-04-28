@@ -28,12 +28,16 @@ No banco, o papel `user` representa o colaborador comum.
 - Mutacoes de categoria sao administrativas.
 - Leitura exige usuario autenticado.
 
-## Kits e combos
+## Combos
 
-- O projeto ainda possui a entidade `kits`, com composicao em `kit_items`.
-- No fluxo atual de criacao de reserva, kits funcionam como atalhos para selecionar os itens fisicos do kit.
-- A reserva final e persistida com `itemId` em `reservation_items`, mantendo o item fisico como unidade de bloqueio.
-- A tabela `reservation_items` ainda possui `kitId` nullable por compatibilidade do schema atual.
+- Na interface, agrupamentos reutilizaveis devem ser tratados como `Combos`.
+- No banco, a tabela tecnica `kits` permanece por compatibilidade nesta etapa.
+- Combos sao apenas atalhos para adicionar varios equipamentos ao carrinho de reserva.
+- Combo nao e entidade fisica reservavel.
+- A reserva final e persistida somente com `itemId` em `reservation_items`, mantendo o equipamento fisico como unidade real de controle.
+- Novas reservas nao devem gravar `kitId` em `reservation_items`.
+- A coluna `reservation_items.kitId` permanece como legado/compatibilidade temporaria para reservas antigas, se existirem.
+- Ao aplicar um combo, itens disponiveis entram no carrinho, itens indisponiveis sao ignorados e o usuario recebe aviso.
 
 ## Reservas
 
@@ -41,15 +45,15 @@ No banco, o papel `user` representa o colaborador comum.
 - Uma reserva possui periodo (`startDate`, `endDate`), status e itens associados.
 - Status atuais: `pendente`, `ativa`, `concluida`, `cancelada`.
 - Itens diretamente escolhidos precisam estar disponiveis no periodo.
-- Itens vindos de kits/combos indisponiveis sao ignorados; itens disponiveis seguem para a reserva.
+- Itens vindos de combos indisponiveis sao ignorados antes da criacao; itens disponiveis seguem para a reserva como `itemId`.
 - Se nenhum item disponivel for selecionado, a criacao falha.
 
 ## Anti-conflito
 
 - Reservas `pendente` e `ativa` bloqueiam disponibilidade.
 - Ha checagem de sobreposicao por periodo.
-- O bloqueio considera itens fisicos diretamente reservados e itens vindos de kits.
-- Kits que compartilham itens indisponiveis sao marcados como indisponiveis para o periodo.
+- O bloqueio considera equipamentos fisicos por `itemId`.
+- Combos ficam indisponiveis parcialmente ou totalmente conforme a disponibilidade dos itens fisicos que os compoem.
 
 ## Check-out e check-in
 

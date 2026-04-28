@@ -46,9 +46,9 @@ Nenhuma migracao de banco ou alteracao de regra de negocio foi feita neste basel
 
 Telas principais ja existentes:
 
-- `Dashboard`: metricas de itens, reservas, atrasos, equipe, kits e manutencao.
+- `Dashboard`: metricas de itens, reservas, atrasos, equipe, combos e manutencao.
 - `Equipamentos`: CRUD com marca, modelo, categoria, foto, numero de serie, patrimonio, estado de conservacao, observacoes, filtros e busca.
-- `Kits`: CRUD de agrupamentos de itens.
+- `Combos`: CRUD de agrupamentos reutilizaveis de itens, usados como atalhos de selecao.
 - `Equipe`: listagem de usuarios, edicao de perfil, alteracao de role por admin e historico de reservas por usuario.
 - `Calendario`: visao dia/semana/mes com reservas por periodo e atalho para criar nova reserva.
 - `Reservas`: listagem, filtro por status, criacao de reserva, detalhes e cancelamento.
@@ -82,7 +82,7 @@ O modelo atual ja cobre o nucleo do produto:
 - usuarios internos;
 - categorias;
 - itens/equipamentos individuais com dados de ativo fisico;
-- kits;
+- combos/kits tecnicos;
 - reservas;
 - itens da reserva.
 
@@ -90,7 +90,7 @@ Tambem ja existe uma regra anti-conflito importante:
 
 - o sistema detecta sobreposicao de datas;
 - expande conflitos por itens reservados diretamente ou via kit;
-- marca kits como indisponiveis quando compartilham um item ja reservado.
+- marca combos como parcialmente ou totalmente indisponiveis quando compartilham um item ja reservado.
 
 ### Aderencia as regras de negocio fornecidas
 
@@ -114,16 +114,16 @@ Pontos aderentes:
 
 Pontos ainda desalinhados:
 
-- o produto ainda mantem a tela e a entidade `kits`, enquanto a regra alvo pede **templates/combos apenas como atalho**;
-- `reservation_items` ainda aceita `kitId` no schema por compatibilidade, embora o fluxo atual de criacao persista itens fisicos em `itemId`;
-- nao existe entidade especifica de `template/combo`;
+- a tabela tecnica ainda se chama `kits`, mas a UI e a regra de negocio tratam esses agrupamentos como **combos apenas como atalho**;
+- `reservation_items` ainda aceita `kitId` no schema por compatibilidade, embora novas reservas persistam itens fisicos em `itemId` e `kitId = null`;
+- nao existe entidade tecnica renomeada para `template/combo`;
 - nao existe trilha de auditoria detalhada de eventos, apenas timestamps principais na reserva;
 - nao existe etapa explicita de aprovacao entre "pendente" e "ativa".
 
 ### Riscos tecnicos e observacoes importantes
 
 - O repositorio ainda carrega alguns artefatos do template anterior, principalmente em `server/_core/*`, `client/public/__manus__/*` e plugins Manus no `vite.config.ts`. Eles sustentam parte do bootstrap atual, mas nao fazem parte do dominio central do ReservAI.
-- A tela e o backend de `Kits` funcionam, mas representam uma decisao de produto que provavelmente precisara ser revisada para alinhar ao modelo final de combos/templates.
+- A tela e o backend de Combos ainda usam a tabela tecnica `kits` por compatibilidade. A regra atual e que combo nao e reservavel diretamente.
 - O controle de acesso de reservas foi endurecido no estado atual: colaborador ve apenas reservas proprias, `cancel` e `update` validam dono/status, `checkout`/`checkin` exigem admin. Reserva ativa nao pode ser cancelada; deve passar por check-in. Ainda falta decidir se havera papel operacional separado de admin.
 - O build passa, mas o Vite alerta que o bundle frontend principal passa de 500 kB apos minificacao. Isso nao bloqueia deploy, mas pode virar pauta de otimizacao.
 
@@ -205,7 +205,7 @@ Estado atual no codigo:
 
 - o banco usa `role = "admin" | "user"`;
 - `user` deve ser interpretado como o papel de colaborador;
-- itens, categorias e kits ja estao protegidos para admin nas mutacoes;
+- itens, categorias e combos ja estao protegidos para admin nas mutacoes;
 - reservas validam escopo por papel em listagem e detalhe;
 - reservas validam dono/status para `update` e `cancel`;
 - check-out e check-in exigem admin;
@@ -251,7 +251,7 @@ Estado atual:
 - a reserva criada persiste os itens fisicos finais em `reservation_items.itemId`;
 - a entidade `kits` ainda existe e precisa de decisao de produto antes de evoluir para templates/combos formais.
 
-### Templates / combos
+### Combos
 
 Regra alvo:
 
@@ -260,9 +260,13 @@ Regra alvo:
 
 Estado atual:
 
-- o conceito mais proximo e `kits`;
-- no fluxo de criacao de reserva, os itens do kit sao expandidos, itens indisponiveis vindos do kit sao pulados e itens disponiveis sao persistidos como itens fisicos;
-- isso deve evoluir para `templates` ou `combos` desacoplados da entidade historica `kits`.
+- a interface usa o termo `Combos`;
+- a tabela tecnica permanece `kits` por compatibilidade;
+- no fluxo de criacao de reserva, combos adicionam ao carrinho apenas os itens disponiveis;
+- itens indisponiveis do combo sao ignorados com aviso ao usuario;
+- novas reservas persistem somente itens fisicos em `reservation_items.itemId`;
+- novas reservas gravam `reservation_items.kitId = null`;
+- `kitId` permanece apenas como legado/compatibilidade temporaria para reservas antigas, se existirem.
 
 ### Sistema anti-conflito
 
@@ -274,8 +278,10 @@ Estado atual:
 
 - implementado;
 - ha checagem de sobreposicao por periodo;
-- ha expansao de conflitos por itens dentro de kits;
-- ha bloqueio de kits afetados por item compartilhado.
+- ha checagem por `itemId` fisico;
+- reservas `pendente` e `ativa` bloqueiam disponibilidade;
+- reservas `concluida` e `cancelada` nao bloqueiam disponibilidade;
+- combos sao avaliados a partir da disponibilidade dos itens que os compoem.
 
 ### Check-out / Check-in
 
@@ -378,7 +384,13 @@ Relacionamentos:
 
 ### `kits`
 
-Agrupamentos persistidos de itens. Hoje funcionam como entidade de negocio real.
+Agrupamentos persistidos de itens. Na interface e no negocio atual sao tratados como Combos.
+
+Decisao de compatibilidade:
+
+- a tabela continua chamada `kits` nesta etapa para evitar migracao agressiva;
+- combo e apenas atalho de selecao;
+- combo nao deve ser persistido como item real de reserva.
 
 Campos principais:
 
@@ -447,7 +459,8 @@ Observacao importante:
 
 - a modelagem ainda aceita `itemId` **ou** `kitId` por linha;
 - o fluxo atual de criacao grava itens fisicos em `itemId`;
-- `kitId` permanece no schema por compatibilidade, mas nao deve ser a unidade final de bloqueio em novas melhorias.
+- novas reservas gravam `kitId = null`;
+- `kitId` permanece no schema por compatibilidade temporaria, mas nao deve ser a unidade final de bloqueio em novas melhorias.
 
 ### Leitura arquitetural do dominio
 
@@ -465,7 +478,7 @@ Observacao importante:
 Recomendacao arquitetural:
 
 - manter `users`, `categories`, `items`, `reservations` e um vinculo por item reservado;
-- substituir o papel de `kits` como entidade reservavel por `templates`/`combos` como atalho de selecao;
+- manter combos como atalhos de selecao, nunca como entidade reservavel;
 - garantir que a reserva final sempre persista **itens fisicos individuais**, nunca uma entidade abstrata que esconda os itens reais.
 
 Modelo alvo sugerido:
@@ -484,10 +497,8 @@ Opcional, mas fortemente recomendado:
 
 ### Prioridade 1 - alinhar dominio ao negocio final
 
-- Decidir oficialmente se `kits` serao mantidos apenas como compatibilidade temporaria ou migrados para `templates/combos`.
-- Consolidar a experiencia de reserva como carrinho puro de itens.
-- Expor melhor na UI quando combos/kits pularem itens indisponiveis.
-- Planejar migracao de schema para remover dependencia de `kitId` em `reservation_items`, se a decisao de produto confirmar templates/combos.
+- Decidir quando a tabela tecnica `kits` sera renomeada ou substituida por `combos/templates`.
+- Planejar migracao futura para remover `kitId` de `reservation_items` apos validar se ha reservas antigas dependentes dessa coluna.
 
 ### Prioridade 2 - endurecer seguranca e RBAC
 
@@ -518,8 +529,8 @@ Opcional, mas fortemente recomendado:
 
 Se precisarmos continuar o desenvolvimento agora, a ordem mais segura e:
 
-1. decidir oficialmente o destino de `kits` versus `templates/combos`;
-2. consolidar a UI de reserva como carrinho de itens fisicos;
-3. planejar migracao para remover `kitId` de `reservation_items`, se aplicavel;
+1. validar se existem reservas antigas com `reservation_items.kitId`;
+2. planejar migracao para remover `kitId` de `reservation_items`, se aplicavel;
+3. decidir quando renomear a tabela tecnica `kits` para `combos/templates`;
 4. adicionar auditoria completa de eventos;
 5. expandir testes automatizados antes de novas features cosmeticas.

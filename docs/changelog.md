@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-04-28 - Combos como atalhos de selecao
+
+Resumo:
+
+- Consolidado o comportamento de combos como atalhos para popular o carrinho de itens fisicos.
+- Criado helper compartilhado para aplicar combo sem duplicar itens e ignorando indisponiveis.
+- `createReservation` usa construtor explicito de linhas fisicas e novas reservas gravam `kitId = null`.
+- Disponibilidade passou a usar uma constante compartilhada de status bloqueantes: `pendente` e `ativa`.
+- UI de Reservas informa quando itens do combo nao foram adicionados por indisponibilidade.
+- Tabela tecnica `kits` e coluna `reservation_items.kitId` permanecem como compatibilidade/legado; novas reservas nao devem usar `kitId`.
+- Testes de combo, persistencia fisica e status de disponibilidade foram adicionados.
+
+Comandos executados:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou fora do sandbox. Resultado: 2 arquivos, 49 testes.
+- `corepack pnpm build`: passou fora do sandbox; manteve apenas o alerta ja conhecido de chunk frontend acima de 500 kB.
+
+Observacao:
+
+- Nao houve migration nesta etapa; `kits` e `reservation_items.kitId` foram mantidos por compatibilidade, mas novas reservas gravam apenas `itemId`.
+
 ## 2026-04-28 - Cancelamento de reservas ativas bloqueado
 
 Resumo:

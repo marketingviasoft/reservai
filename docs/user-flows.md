@@ -23,11 +23,12 @@
 6. Equipamentos sao filtraveis por categoria, status e busca.
 7. A listagem exibe codigo automatico, marca, modelo, categoria, patrimonio, serie, status operacional e estado de conservacao.
 
-## Kits
+## Combos
 
-1. Usuario autenticado lista kits.
-2. Admin gerencia kits e seus itens.
-3. O status do kit e recalculado conforme disponibilidade/status dos itens.
+1. Usuario autenticado lista combos.
+2. Admin gerencia combos e seus itens.
+3. Combos sao atalhos de selecao, nao ativos fisicos reservaveis.
+4. Ao usar um combo numa reserva, o sistema adiciona ao carrinho apenas os equipamentos fisicos disponiveis.
 
 ## Equipe
 
@@ -40,14 +41,15 @@
 
 1. Usuario escolhe periodo.
 2. Sistema consulta disponibilidade para o periodo.
-3. Usuario seleciona itens diretos e/ou kits como atalho.
+3. Usuario seleciona itens diretos e/ou aplica combos como atalho.
 4. Backend valida conflitos:
    - itens diretos indisponiveis bloqueiam a criacao;
-   - itens indisponiveis vindos de kits sao pulados;
+   - itens indisponiveis vindos de combos sao pulados antes do envio final;
    - pelo menos um item disponivel precisa existir.
 5. Reserva e criada como `pendente`.
 6. Itens fisicos sao persistidos em `reservation_items.itemId`.
 7. A reserva fica vinculada ao usuario autenticado que criou a solicitacao.
+8. Novas reservas nao usam `reservation_items.kitId`; essa coluna e legado/compatibilidade.
 
 ## Cancelamento e edicao de reserva
 
@@ -77,7 +79,7 @@
 4. Reserva passa para `concluida`.
 5. Backend registra data e usuario operador.
 6. Itens da reserva voltam para `disponivel`.
-7. Kits afetados podem ter status recalculado.
+7. Compatibilidade legada ainda recalcula combos caso uma reserva antiga tenha `kitId`, mas novas reservas movimentam apenas itens fisicos.
 
 ## Calendario
 

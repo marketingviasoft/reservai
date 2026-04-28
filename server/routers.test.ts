@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import { COOKIE_NAME } from "../shared/const";
 import type { TrpcContext } from "./_core/context";
+import { buildPhysicalReservationItems } from "./db";
 import {
   assertAdminReservationOperator,
   assertCanCancelReservation,
@@ -9,7 +10,11 @@ import {
   assertReservationOwnerOrAdmin,
   canCancelReservation,
 } from "./reservationAccess";
-import { buildReservationItemSelection } from "./reservationSelection";
+import {
+  buildComboCartUpdate,
+  buildReservationItemSelection,
+} from "./reservationSelection";
+import { isReservationBlockingAvailability } from "../shared/reservationStatus";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -440,6 +445,24 @@ describe("reservation.create - shared kit conflict validation", () => {
 });
 
 describe("reservation item selection", () => {
+  it("builds reservation rows with only physical item ids", () => {
+    const rows = buildPhysicalReservationItems(123, [1, 2, 2, 3]);
+
+    expect(rows).toEqual([
+      { reservationId: 123, itemId: 1, kitId: null },
+      { reservationId: 123, itemId: 2, kitId: null },
+      { reservationId: 123, itemId: 3, kitId: null },
+    ]);
+  });
+
+  it("does not persist kit ids for new reservation item rows", () => {
+    const rows = buildPhysicalReservationItems(123, [9]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.itemId).toBe(9);
+    expect(rows[0]?.kitId).toBeNull();
+  });
+
   it("persists combo selections as physical item ids", () => {
     const result = buildReservationItemSelection({
       directItemIds: [1],
@@ -471,5 +494,56 @@ describe("reservation item selection", () => {
 
     expect(result.conflictingDirectItemIds).toEqual([2]);
     expect(result.itemIds).toEqual([1, 2, 3]);
+  });
+
+  it("adds combo items to the cart without duplicating existing selections", () => {
+    const result = buildComboCartUpdate({
+      currentItemIds: [1, 2],
+      comboItemIds: [2, 3, 3, 4],
+      unavailableItemIds: [],
+    });
+
+    expect(result.itemIds).toEqual([1, 2, 3, 4]);
+    expect(result.addedItemIds).toEqual([3, 4]);
+    expect(result.duplicateItemIds).toEqual([2]);
+  });
+
+  it("adds only available combo items and reports skipped unavailable items", () => {
+    const result = buildComboCartUpdate({
+      currentItemIds: [],
+      comboItemIds: [1, 2, 3],
+      unavailableItemIds: [2],
+    });
+
+    expect(result.itemIds).toEqual([1, 3]);
+    expect(result.addedItemIds).toEqual([1, 3]);
+    expect(result.skippedItemIds).toEqual([2]);
+    expect(result.allUnavailable).toBe(false);
+  });
+
+  it("reports when all combo items are unavailable or already selected", () => {
+    const result = buildComboCartUpdate({
+      currentItemIds: [1],
+      comboItemIds: [1, 2],
+      unavailableItemIds: [2],
+    });
+
+    expect(result.itemIds).toEqual([1]);
+    expect(result.addedItemIds).toEqual([]);
+    expect(result.skippedItemIds).toEqual([2]);
+    expect(result.duplicateItemIds).toEqual([1]);
+    expect(result.allUnavailable).toBe(true);
+  });
+});
+
+describe("reservation availability status rules", () => {
+  it("blocks availability for pending and active reservations", () => {
+    expect(isReservationBlockingAvailability("pendente")).toBe(true);
+    expect(isReservationBlockingAvailability("ativa")).toBe(true);
+  });
+
+  it("does not block availability for canceled or concluded reservations", () => {
+    expect(isReservationBlockingAvailability("cancelada")).toBe(false);
+    expect(isReservationBlockingAvailability("concluida")).toBe(false);
   });
 });
