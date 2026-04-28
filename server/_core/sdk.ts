@@ -5,6 +5,24 @@ import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
 
+const AUTH_TIMEOUT_MS = 10_000;
+
+async function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(
+      () => reject(new Error(`${label} timed out after ${AUTH_TIMEOUT_MS}ms`)),
+      AUTH_TIMEOUT_MS,
+    );
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 function getBearerToken(req: Request): string | null {
   const header = req.headers.authorization;
   if (!header) return null;
@@ -37,7 +55,10 @@ class SDKServer {
     }
 
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase.auth.getUser(accessToken);
+    const { data, error } = await withTimeout(
+      supabase.auth.getUser(accessToken),
+      "Supabase auth.getUser",
+    );
 
     if (error || !data.user) {
       throw ForbiddenError("Invalid Supabase access token");
@@ -52,15 +73,21 @@ class SDKServer {
       "Usuário";
     const signedInAt = new Date();
 
-    await db.upsertUser({
-      openId: supabaseUser.id,
-      name,
-      email,
-      loginMethod: "supabase",
-      lastSignedIn: signedInAt,
-    });
+    await withTimeout(
+      db.upsertUser({
+        openId: supabaseUser.id,
+        name,
+        email,
+        loginMethod: "supabase",
+        lastSignedIn: signedInAt,
+      }),
+      "User upsert",
+    );
 
-    const user = await db.getUserByOpenId(supabaseUser.id);
+    const user = await withTimeout(
+      db.getUserByOpenId(supabaseUser.id),
+      "User lookup",
+    );
     if (!user) {
       throw ForbiddenError("User not found");
     }

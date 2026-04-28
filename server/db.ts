@@ -44,6 +44,8 @@ export async function getDb() {
       _client = postgres(process.env.DATABASE_URL, {
         max: 1,
         prepare: false,
+        connect_timeout: 10,
+        idle_timeout: 20,
       });
       _db = drizzle(_client);
     } catch (error) {

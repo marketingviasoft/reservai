@@ -265,7 +265,9 @@ async function getDb() {
     try {
       _client = postgres(process.env.DATABASE_URL, {
         max: 1,
-        prepare: false
+        prepare: false,
+        connect_timeout: 10,
+        idle_timeout: 20
       });
       _db = drizzle(_client);
     } catch (error) {
@@ -1145,6 +1147,21 @@ var ForbiddenError = (msg) => new HttpError(403, msg);
 
 // server/_core/sdk.ts
 import { createClient as createClient2 } from "@supabase/supabase-js";
+var AUTH_TIMEOUT_MS = 1e4;
+async function withTimeout(promise, label) {
+  let timeout;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeout = setTimeout(
+      () => reject(new Error(`${label} timed out after ${AUTH_TIMEOUT_MS}ms`)),
+      AUTH_TIMEOUT_MS
+    );
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 function getBearerToken(req) {
   const header = req.headers.authorization;
   if (!header) return null;
@@ -1172,7 +1189,10 @@ var SDKServer = class {
       throw ForbiddenError("Missing Supabase access token");
     }
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase.auth.getUser(accessToken);
+    const { data, error } = await withTimeout(
+      supabase.auth.getUser(accessToken),
+      "Supabase auth.getUser"
+    );
     if (error || !data.user) {
       throw ForbiddenError("Invalid Supabase access token");
     }
@@ -1180,14 +1200,20 @@ var SDKServer = class {
     const email = supabaseUser.email ?? null;
     const name = supabaseUser.user_metadata?.name ?? supabaseUser.user_metadata?.full_name ?? email ?? "Usu\xE1rio";
     const signedInAt = /* @__PURE__ */ new Date();
-    await upsertUser({
-      openId: supabaseUser.id,
-      name,
-      email,
-      loginMethod: "supabase",
-      lastSignedIn: signedInAt
-    });
-    const user = await getUserByOpenId(supabaseUser.id);
+    await withTimeout(
+      upsertUser({
+        openId: supabaseUser.id,
+        name,
+        email,
+        loginMethod: "supabase",
+        lastSignedIn: signedInAt
+      }),
+      "User upsert"
+    );
+    const user = await withTimeout(
+      getUserByOpenId(supabaseUser.id),
+      "User lookup"
+    );
     if (!user) {
       throw ForbiddenError("User not found");
     }
