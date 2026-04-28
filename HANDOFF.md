@@ -47,7 +47,7 @@ Nenhuma migracao de banco ou alteracao de regra de negocio foi feita neste basel
 Telas principais ja existentes:
 
 - `Dashboard`: metricas de itens, reservas, atrasos, equipe, kits e manutencao.
-- `Equipamentos`: CRUD com categorias, upload de foto, filtros e busca.
+- `Equipamentos`: CRUD com marca, modelo, categoria, foto, numero de serie, patrimonio, estado de conservacao, observacoes, filtros e busca.
 - `Kits`: CRUD de agrupamentos de itens.
 - `Equipe`: listagem de usuarios, edicao de perfil, alteracao de role por admin e historico de reservas por usuario.
 - `Calendario`: visao dia/semana/mes com reservas por periodo e atalho para criar nova reserva.
@@ -81,7 +81,7 @@ O modelo atual ja cobre o nucleo do produto:
 
 - usuarios internos;
 - categorias;
-- itens/equipamentos individuais;
+- itens/equipamentos individuais com dados de ativo fisico;
 - kits;
 - reservas;
 - itens da reserva.
@@ -107,7 +107,8 @@ Pontos aderentes:
 - bloqueio de double-booking por item e por kit compartilhado;
 - `checkout` e `checkin` restritos a admin;
 - `update` e `cancel` de reserva restritos ao dono da reserva ou admin;
-- criacao de reserva persistindo itens fisicos individuais em `reservation_items.itemId`.
+- criacao de reserva persistindo itens fisicos individuais em `reservation_items.itemId`;
+- cadastro de equipamento separando `status` operacional de `condition` fisica.
 
 Pontos ainda desalinhados:
 
@@ -205,6 +206,18 @@ Estado atual no codigo:
 - itens, categorias e kits ja estao protegidos para admin nas mutacoes;
 - reservas validam dono/admin para `update` e `cancel`;
 - check-out e check-in exigem admin.
+
+### Cadastro de equipamentos
+
+Estado atual:
+
+- `code` segue como ID/codigo automatico do produto no formato `EQP-XXXXX`;
+- `brand` e `model` sao obrigatorios;
+- `assetNumber` e opcional, mas recomendado para patrimonio;
+- `serialNumber` e opcional;
+- `condition` e obrigatorio e representa conservacao fisica: `novo`, `bom`, `regular`, `danificado`;
+- `status` continua representando o estado operacional/logistico: `disponivel`, `emprestado`, `manutencao`, `extraviado`;
+- `notes` continua sendo o campo de observacoes de avarias para evitar migracao desnecessaria para `damageNotes` nesta etapa.
 
 ### Modelo de reserva alvo
 
@@ -325,12 +338,16 @@ Campos principais:
 - `id`
 - `code` (`EQP-XXXXX`, gerado automaticamente)
 - `name`
+- `brand`
+- `model`
 - `description`
 - `categoryId`
 - `serialNumber`
+- `assetNumber`
 - `photoUrl`
 - `photoKey`
 - `status` (`disponivel`, `emprestado`, `manutencao`, `extraviado`)
+- `condition` (`novo`, `bom`, `regular`, `danificado`)
 - `notes`
 - `createdAt`
 - `updatedAt`
@@ -421,7 +438,8 @@ Observacao importante:
 - `items` representa o inventario fisico real;
 - `reservations` representa o compromisso temporal;
 - `checkout/checkin` separados da reserva representam bem o fluxo operacional;
-- o status fisico do item existe de forma independente da reserva;
+- o status operacional do item existe de forma independente da reserva;
+- a conservacao fisica do item agora fica separada em `condition`;
 - ha base suficiente para evoluir sem reescrever o sistema do zero.
 
 ### O que precisa mudar para aderir ao negocio final

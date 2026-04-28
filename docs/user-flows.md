@@ -17,8 +17,11 @@
 
 1. Usuario autenticado lista equipamentos.
 2. Admin pode criar, editar, excluir e enviar foto.
-3. Fotos usam Supabase Storage via `server/storage.ts`.
-4. Equipamentos sao filtraveis por categoria, status e busca.
+3. No cadastro, admin informa nome, marca, modelo e estado de conservacao.
+4. Admin pode informar categoria, numero de serie, numero de patrimonio, descricao e observacoes de avarias.
+5. Fotos usam Supabase Storage via `server/storage.ts`.
+6. Equipamentos sao filtraveis por categoria, status e busca.
+7. A listagem exibe codigo automatico, marca, modelo, categoria, patrimonio, serie, status operacional e estado de conservacao.
 
 ## Kits
 

@@ -18,6 +18,12 @@ export const itemStatusEnum = pgEnum("item_status", [
   "manutencao",
   "extraviado",
 ]);
+export const itemConditionEnum = pgEnum("item_condition", [
+  "novo",
+  "bom",
+  "regular",
+  "danificado",
+]);
 export const kitStatusEnum = pgEnum("kit_status", ["completo", "incompleto"]);
 export const reservationStatusEnum = pgEnum("reservation_status", [
   "pendente",
@@ -66,13 +72,19 @@ export const items = pgTable(
     id: serial("id").primaryKey(),
     code: varchar("code", { length: 16 }).notNull().unique(), // EQP-XXXXX
     name: varchar("name", { length: 256 }).notNull(),
+    brand: varchar("brand", { length: 128 }).notNull(),
+    model: varchar("model", { length: 128 }).notNull(),
     description: text("description"),
     categoryId: integer("categoryId").references(() => categories.id),
     serialNumber: varchar("serialNumber", { length: 128 }),
+    assetNumber: varchar("assetNumber", { length: 128 }),
     photoUrl: text("photoUrl"),
     photoKey: varchar("photoKey", { length: 512 }),
     status: itemStatusEnum("status")
       .default("disponivel")
+      .notNull(),
+    condition: itemConditionEnum("condition")
+      .default("bom")
       .notNull(),
     notes: text("notes"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),

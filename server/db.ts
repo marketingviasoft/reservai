@@ -182,19 +182,34 @@ export async function listItems(filters?: { categoryId?: number; status?: string
   const conditions = [];
   if (filters?.categoryId) conditions.push(eq(items.categoryId, filters.categoryId));
   if (filters?.status) conditions.push(eq(items.status, filters.status as any));
-  if (filters?.search) conditions.push(or(like(items.name, `%${filters.search}%`), like(items.code, `%${filters.search}%`)));
+  if (filters?.search) {
+    const term = `%${filters.search}%`;
+    conditions.push(or(
+      like(items.name, term),
+      like(items.code, term),
+      like(items.brand, term),
+      like(items.model, term),
+      like(items.assetNumber, term),
+      like(items.serialNumber, term)
+    ));
+  }
   const rows = await db
     .select({
       id: items.id,
       code: items.code,
       name: items.name,
+      brand: items.brand,
+      model: items.model,
       description: items.description,
       categoryId: items.categoryId,
       categoryName: categories.name,
       categoryColor: categories.color,
+      serialNumber: items.serialNumber,
+      assetNumber: items.assetNumber,
       photoUrl: items.photoUrl,
       photoKey: items.photoKey,
       status: items.status,
+      condition: items.condition,
       notes: items.notes,
       createdAt: items.createdAt,
       updatedAt: items.updatedAt,
@@ -214,12 +229,17 @@ export async function getItemById(id: number) {
       id: items.id,
       code: items.code,
       name: items.name,
+      brand: items.brand,
+      model: items.model,
       description: items.description,
       categoryId: items.categoryId,
       categoryName: categories.name,
+      serialNumber: items.serialNumber,
+      assetNumber: items.assetNumber,
       photoUrl: items.photoUrl,
       photoKey: items.photoKey,
       status: items.status,
+      condition: items.condition,
       notes: items.notes,
       createdAt: items.createdAt,
       updatedAt: items.updatedAt,

@@ -61,10 +61,30 @@ const statusColors: Record<string, string> = {
   extraviado: "bg-red-100 text-red-600",
 };
 
+const conditionLabels: Record<string, string> = {
+  novo: "Novo",
+  bom: "Bom",
+  regular: "Regular",
+  danificado: "Danificado",
+};
+
+const conditionColors: Record<string, string> = {
+  novo: "bg-sky-100 text-sky-700",
+  bom: "bg-emerald-100 text-emerald-700",
+  regular: "bg-amber-100 text-amber-700",
+  danificado: "bg-red-100 text-red-600",
+};
+
 type ItemForm = {
   name: string;
+  brand: string;
+  model: string;
   description: string;
   categoryId: number | undefined;
+  serialNumber: string;
+  assetNumber: string;
+  condition: "novo" | "bom" | "regular" | "danificado";
+  notes: string;
   photoPreview: string | null;
   photoBase64: string | null;
   photoFilename: string | null;
@@ -73,8 +93,14 @@ type ItemForm = {
 
 const emptyForm: ItemForm = {
   name: "",
+  brand: "",
+  model: "",
   description: "",
   categoryId: undefined,
+  serialNumber: "",
+  assetNumber: "",
+  condition: "bom",
+  notes: "",
   photoPreview: null,
   photoBase64: null,
   photoFilename: null,
@@ -167,10 +193,24 @@ export default function Items() {
       toast.error("Nome é obrigatório");
       return;
     }
+    if (!form.brand.trim()) {
+      toast.error("Marca é obrigatória");
+      return;
+    }
+    if (!form.model.trim()) {
+      toast.error("Modelo é obrigatório");
+      return;
+    }
     const data = {
-      name: form.name,
-      description: form.description || undefined,
+      name: form.name.trim(),
+      brand: form.brand.trim(),
+      model: form.model.trim(),
+      description: form.description.trim() || undefined,
       categoryId: form.categoryId || undefined,
+      serialNumber: form.serialNumber.trim() || undefined,
+      assetNumber: form.assetNumber.trim() || undefined,
+      condition: form.condition,
+      notes: form.notes.trim() || undefined,
     };
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...data });
@@ -183,8 +223,14 @@ export default function Items() {
     setEditingId(item.id);
     setForm({
       name: item.name,
+      brand: item.brand || "",
+      model: item.model || "",
       description: item.description || "",
       categoryId: item.categoryId || undefined,
+      serialNumber: item.serialNumber || "",
+      assetNumber: item.assetNumber || "",
+      condition: item.condition || "bom",
+      notes: item.notes || "",
       photoPreview: item.photoUrl || null,
       photoBase64: null,
       photoFilename: null,
@@ -273,7 +319,7 @@ export default function Items() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nome..."
+            placeholder="Buscar por nome, marca, modelo, patrimônio ou série..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -377,13 +423,24 @@ export default function Items() {
                         <p className="text-[11px] text-muted-foreground/60 mt-0.5 font-mono">
                           {item.code}
                         </p>
+                        <p className="text-xs text-muted-foreground mt-1 truncate">
+                          {item.brand} {item.model}
+                        </p>
                       </div>
-                      <Badge
-                        variant="secondary"
-                        className={`text-xs shrink-0 ${statusColors[item.status]}`}
-                      >
-                        {statusLabels[item.status]}
-                      </Badge>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <Badge
+                          variant="secondary"
+                          className={`text-xs ${statusColors[item.status]}`}
+                        >
+                          {statusLabels[item.status]}
+                        </Badge>
+                        <Badge
+                          variant="secondary"
+                          className={`text-xs ${conditionColors[item.condition] || conditionColors.bom}`}
+                        >
+                          {conditionLabels[item.condition] || "Bom"}
+                        </Badge>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 mt-1.5">
                       {item.categoryName && (
@@ -398,11 +455,28 @@ export default function Items() {
                         </span>
                       )}
                     </div>
+                    <div className="grid grid-cols-1 gap-0.5 mt-2 text-[11px] text-muted-foreground">
+                      {item.assetNumber && (
+                        <span className="truncate">
+                          Patrimônio: {item.assetNumber}
+                        </span>
+                      )}
+                      {item.serialNumber && (
+                        <span className="truncate">
+                          Série: {item.serialNumber}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {item.description && (
                   <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
                     {item.description}
+                  </p>
+                )}
+                {item.notes && (
+                  <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
+                    Avarias/observações: {item.notes}
                   </p>
                 )}
                 {isAdmin && (
@@ -435,7 +509,7 @@ export default function Items() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingId ? "Editar Equipamento" : "Novo Equipamento"}
@@ -517,6 +591,25 @@ export default function Items() {
               />
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Marca *</Label>
+                <Input
+                  value={form.brand}
+                  onChange={(e) => setForm({ ...form, brand: e.target.value })}
+                  placeholder="Ex.: Sony"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Modelo *</Label>
+                <Input
+                  value={form.model}
+                  onChange={(e) => setForm({ ...form, model: e.target.value })}
+                  placeholder="Ex.: A7 IV"
+                />
+              </div>
+            </div>
+
             {/* Category */}
             <div className="space-y-1.5">
               <Label>Categoria</Label>
@@ -543,6 +636,52 @@ export default function Items() {
               </Select>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Número de série</Label>
+                <Input
+                  value={form.serialNumber}
+                  onChange={(e) =>
+                    setForm({ ...form, serialNumber: e.target.value })
+                  }
+                  placeholder="Opcional"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Número do patrimônio</Label>
+                <Input
+                  value={form.assetNumber}
+                  onChange={(e) =>
+                    setForm({ ...form, assetNumber: e.target.value })
+                  }
+                  placeholder="Opcional"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Estado de conservação *</Label>
+              <Select
+                value={form.condition}
+                onValueChange={(v) =>
+                  setForm({
+                    ...form,
+                    condition: v as ItemForm["condition"],
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="novo">Novo</SelectItem>
+                  <SelectItem value="bom">Bom</SelectItem>
+                  <SelectItem value="regular">Regular</SelectItem>
+                  <SelectItem value="danificado">Danificado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Description */}
             <div className="space-y-1.5">
               <Label>Descrição</Label>
@@ -552,6 +691,18 @@ export default function Items() {
                   setForm({ ...form, description: e.target.value })
                 }
                 placeholder="Descrição do equipamento"
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Observações de avarias</Label>
+              <Textarea
+                value={form.notes}
+                onChange={(e) =>
+                  setForm({ ...form, notes: e.target.value })
+                }
+                placeholder="Ex.: Pequeno amassado na lateral, mas funcionando normalmente."
                 rows={3}
               />
             </div>

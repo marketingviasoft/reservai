@@ -121,6 +121,34 @@ describe("item router - access control", () => {
   });
 });
 
+describe("item router - input validation", () => {
+  it("requires brand and model when creating items", async () => {
+    const user = createMockUser({ role: "admin" });
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      // @ts-expect-error - testing missing required fields
+      caller.item.create({ name: "Camera" })
+    ).rejects.toThrow();
+  });
+
+  it("validates physical condition separately from operational status", async () => {
+    const user = createMockUser({ role: "admin" });
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.item.create({
+        name: "Camera",
+        brand: "Sony",
+        model: "A7 IV",
+        status: "disponivel",
+        // @ts-expect-error - testing invalid physical condition
+        condition: "emprestado",
+      })
+    ).rejects.toThrow();
+  });
+});
+
 describe("kit router - access control", () => {
   it("rejects non-admin from creating kits", async () => {
     const user = createMockUser({ role: "user" });

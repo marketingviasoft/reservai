@@ -94,6 +94,12 @@ var itemStatusEnum = pgEnum("item_status", [
   "manutencao",
   "extraviado"
 ]);
+var itemConditionEnum = pgEnum("item_condition", [
+  "novo",
+  "bom",
+  "regular",
+  "danificado"
+]);
 var kitStatusEnum = pgEnum("kit_status", ["completo", "incompleto"]);
 var reservationStatusEnum = pgEnum("reservation_status", [
   "pendente",
@@ -132,12 +138,16 @@ var items = pgTable(
     code: varchar("code", { length: 16 }).notNull().unique(),
     // EQP-XXXXX
     name: varchar("name", { length: 256 }).notNull(),
+    brand: varchar("brand", { length: 128 }).notNull(),
+    model: varchar("model", { length: 128 }).notNull(),
     description: text("description"),
     categoryId: integer("categoryId").references(() => categories.id),
     serialNumber: varchar("serialNumber", { length: 128 }),
+    assetNumber: varchar("assetNumber", { length: 128 }),
     photoUrl: text("photoUrl"),
     photoKey: varchar("photoKey", { length: 512 }),
     status: itemStatusEnum("status").default("disponivel").notNull(),
+    condition: itemConditionEnum("condition").default("bom").notNull(),
     notes: text("notes"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull()
@@ -389,18 +399,33 @@ async function listItems(filters) {
   const conditions = [];
   if (filters?.categoryId) conditions.push(eq(items.categoryId, filters.categoryId));
   if (filters?.status) conditions.push(eq(items.status, filters.status));
-  if (filters?.search) conditions.push(or(like(items.name, `%${filters.search}%`), like(items.code, `%${filters.search}%`)));
+  if (filters?.search) {
+    const term = `%${filters.search}%`;
+    conditions.push(or(
+      like(items.name, term),
+      like(items.code, term),
+      like(items.brand, term),
+      like(items.model, term),
+      like(items.assetNumber, term),
+      like(items.serialNumber, term)
+    ));
+  }
   const rows = await db.select({
     id: items.id,
     code: items.code,
     name: items.name,
+    brand: items.brand,
+    model: items.model,
     description: items.description,
     categoryId: items.categoryId,
     categoryName: categories.name,
     categoryColor: categories.color,
+    serialNumber: items.serialNumber,
+    assetNumber: items.assetNumber,
     photoUrl: items.photoUrl,
     photoKey: items.photoKey,
     status: items.status,
+    condition: items.condition,
     notes: items.notes,
     createdAt: items.createdAt,
     updatedAt: items.updatedAt
@@ -414,12 +439,17 @@ async function getItemById(id) {
     id: items.id,
     code: items.code,
     name: items.name,
+    brand: items.brand,
+    model: items.model,
     description: items.description,
     categoryId: items.categoryId,
     categoryName: categories.name,
+    serialNumber: items.serialNumber,
+    assetNumber: items.assetNumber,
     photoUrl: items.photoUrl,
     photoKey: items.photoKey,
     status: items.status,
+    condition: items.condition,
     notes: items.notes,
     createdAt: items.createdAt,
     updatedAt: items.updatedAt
@@ -910,19 +940,27 @@ var itemRouter = router({
   getById: protectedProcedure.input(z.object({ id: z.number() })).query(({ input }) => getItemById(input.id)),
   create: adminProcedure.input(z.object({
     name: z.string().min(1),
+    brand: z.string().min(1),
+    model: z.string().min(1),
     description: z.string().optional(),
     categoryId: z.number().optional(),
     serialNumber: z.string().optional(),
+    assetNumber: z.string().optional(),
     status: z.enum(["disponivel", "emprestado", "manutencao", "extraviado"]).optional(),
+    condition: z.enum(["novo", "bom", "regular", "danificado"]).default("bom"),
     notes: z.string().optional()
   })).mutation(({ input }) => createItem(input)),
   update: adminProcedure.input(z.object({
     id: z.number(),
     name: z.string().min(1).optional(),
+    brand: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
     description: z.string().optional(),
     categoryId: z.number().nullable().optional(),
     serialNumber: z.string().optional(),
+    assetNumber: z.string().optional(),
     status: z.enum(["disponivel", "emprestado", "manutencao", "extraviado"]).optional(),
+    condition: z.enum(["novo", "bom", "regular", "danificado"]).optional(),
     notes: z.string().optional(),
     photoUrl: z.string().nullable().optional(),
     photoKey: z.string().nullable().optional()

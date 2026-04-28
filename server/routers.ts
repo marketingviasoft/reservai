@@ -35,10 +35,14 @@ const itemRouter = router({
   create: adminProcedure
     .input(z.object({
       name: z.string().min(1),
+      brand: z.string().min(1),
+      model: z.string().min(1),
       description: z.string().optional(),
       categoryId: z.number().optional(),
       serialNumber: z.string().optional(),
+      assetNumber: z.string().optional(),
       status: z.enum(["disponivel", "emprestado", "manutencao", "extraviado"]).optional(),
+      condition: z.enum(["novo", "bom", "regular", "danificado"]).default("bom"),
       notes: z.string().optional(),
     }))
     .mutation(({ input }) => db.createItem(input)),
@@ -46,10 +50,14 @@ const itemRouter = router({
     .input(z.object({
       id: z.number(),
       name: z.string().min(1).optional(),
+      brand: z.string().min(1).optional(),
+      model: z.string().min(1).optional(),
       description: z.string().optional(),
       categoryId: z.number().nullable().optional(),
       serialNumber: z.string().optional(),
+      assetNumber: z.string().optional(),
       status: z.enum(["disponivel", "emprestado", "manutencao", "extraviado"]).optional(),
+      condition: z.enum(["novo", "bom", "regular", "danificado"]).optional(),
       notes: z.string().optional(),
       photoUrl: z.string().nullable().optional(),
       photoKey: z.string().nullable().optional(),

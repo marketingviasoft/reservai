@@ -2,7 +2,7 @@
 
 ## Visao geral
 
-O projeto usa Drizzle ORM com Postgres/Supabase. O schema principal esta em `drizzle/schema.ts`; a migration inicial esta em `drizzle/0000_handy_timeslip.sql`.
+O projeto usa Drizzle ORM com Postgres/Supabase. O schema principal esta em `drizzle/schema.ts`; as migrations ficam em `drizzle/`.
 
 Comandos Drizzle dependem de `DATABASE_URL`:
 
@@ -16,6 +16,7 @@ corepack pnpm db:push
 
 - `user_role`: `user`, `admin`
 - `item_status`: `disponivel`, `emprestado`, `manutencao`, `extraviado`
+- `item_condition`: `novo`, `bom`, `regular`, `danificado`
 - `kit_status`: `completo`, `incompleto`
 - `reservation_status`: `pendente`, `ativa`, `concluida`, `cancelada`
 
@@ -60,12 +61,16 @@ Campos principais:
 - `id`
 - `code`
 - `name`
+- `brand`
+- `model`
 - `description`
 - `categoryId`
 - `serialNumber`
+- `assetNumber`
 - `photoUrl`
 - `photoKey`
 - `status`
+- `condition`
 - `notes`
 - `createdAt`
 - `updatedAt`
@@ -75,6 +80,10 @@ Observacoes:
 - `code` e unico.
 - `serialNumber` tem indice unico.
 - `categoryId` referencia `categories.id`.
+- `brand` e `model` sao obrigatorios.
+- `assetNumber` e opcional.
+- `condition` tem padrao `bom` e nao altera disponibilidade ou fluxo logistico.
+- `notes` representa observacoes de avarias no cadastro atual.
 
 ### `kits`
 

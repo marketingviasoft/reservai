@@ -15,7 +15,11 @@ No banco, o papel `user` representa o colaborador comum.
 
 - Cada equipamento fisico e representado por um item em `items`.
 - O codigo do equipamento segue o formato `EQP-XXXXX`, gerado automaticamente no backend.
-- Status atuais: `disponivel`, `emprestado`, `manutencao`, `extraviado`.
+- Campos obrigatorios no cadastro: nome, marca, modelo e estado de conservacao.
+- Campos opcionais: categoria, foto, numero de serie, numero do patrimonio, descricao e observacoes de avarias.
+- `status` representa o estado operacional/logistico: `disponivel`, `emprestado`, `manutencao`, `extraviado`.
+- `condition` representa o estado fisico/de conservacao: `novo`, `bom`, `regular`, `danificado`.
+- `notes` continua sendo usado como observacoes de avarias nesta etapa, evitando uma migracao extra para `damageNotes`.
 - Cadastro, edicao, exclusao e upload de foto de equipamentos sao operacoes administrativas.
 
 ## Categorias
