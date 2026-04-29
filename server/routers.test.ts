@@ -40,6 +40,12 @@ import {
   isCheckoutEligibleStatus,
   isOperationalHistoryStatus,
 } from "../shared/operationalViews";
+import {
+  buildAvailabilityQueryInput,
+  buildReservationDetailQueryInput,
+  buildReservationEventsQueryInput,
+  shouldEnableAvailabilityQuery,
+} from "../shared/reservationQueryInputs";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
@@ -230,6 +236,35 @@ describe("auth client error helpers", () => {
       viteSupabaseHost: "front.supabase.co",
     });
     expect(JSON.stringify(frontendDiagnostics)).not.toContain("vite-anon-secret");
+  });
+});
+
+describe("reservation page query inputs", () => {
+  it("builds safe availability input when dates are not selected", () => {
+    expect(buildAvailabilityQueryInput(null)).toEqual({
+      startDate: 0,
+      endDate: 0,
+    });
+    expect(shouldEnableAvailabilityQuery(null, true)).toBe(false);
+    expect(shouldEnableAvailabilityQuery(null, false)).toBe(false);
+  });
+
+  it("does not enable availability check until the dialog has valid dates", () => {
+    const dates = { startDate: 1767139200000, endDate: 1767225600000 };
+
+    expect(buildAvailabilityQueryInput(dates)).toEqual(dates);
+    expect(shouldEnableAvailabilityQuery(dates, false)).toBe(false);
+    expect(shouldEnableAvailabilityQuery(dates, true)).toBe(true);
+  });
+
+  it("builds safe reservation detail inputs without an id", () => {
+    expect(buildReservationDetailQueryInput(null)).toEqual({ id: 0 });
+    expect(buildReservationEventsQueryInput(null)).toEqual({ reservationId: 0 });
+  });
+
+  it("preserves reservation detail ids when opening from a detail link", () => {
+    expect(buildReservationDetailQueryInput(42)).toEqual({ id: 42 });
+    expect(buildReservationEventsQueryInput(42)).toEqual({ reservationId: 42 });
   });
 });
 

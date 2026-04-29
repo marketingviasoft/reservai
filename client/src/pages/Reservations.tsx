@@ -64,6 +64,12 @@ import {
   buildReservationEventDescription,
   hasReservationEvents,
 } from "@shared/reservationEvents";
+import {
+  buildAvailabilityQueryInput,
+  buildReservationDetailQueryInput,
+  buildReservationEventsQueryInput,
+  shouldEnableAvailabilityQuery,
+} from "@shared/reservationQueryInputs";
 
 const statusLabels: Record<string, string> = {
   pendente: "Pendente",
@@ -162,20 +168,27 @@ export default function Reservations() {
   });
   const { data: allItems } = trpc.item.list.useQuery();
   const { data: allKits } = trpc.kit.list.useQuery();
+  const detailQueryInput = buildReservationDetailQueryInput(detailId);
+  const detailEventsQueryInput = buildReservationEventsQueryInput(detailId);
+  const availabilityInput = buildAvailabilityQueryInput(availabilityDates);
+  const availabilityEnabled = shouldEnableAvailabilityQuery(
+    availabilityDates,
+    dialogOpen
+  );
   const { data: detail } = trpc.reservation.getById.useQuery(
-    { id: detailId! },
+    detailQueryInput,
     { enabled: detailId !== null }
   );
   const { data: detailEvents, isLoading: eventsLoading } =
     trpc.reservation.events.useQuery(
-      { reservationId: detailId! },
+      detailEventsQueryInput,
       { enabled: detailId !== null }
     );
 
   // Real-time availability check based on selected dates
   const { data: availability } = trpc.reservation.checkAvailability.useQuery(
-    { startDate: availabilityDates!.startDate, endDate: availabilityDates!.endDate },
-    { enabled: !!availabilityDates && dialogOpen }
+    availabilityInput,
+    { enabled: availabilityEnabled }
   );
 
   const createMutation = trpc.reservation.create.useMutation({

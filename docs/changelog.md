@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-04-29 - Correção do crash em Reservas sem datas
+
+Resumo:
+
+- Corrigido crash ao abrir `/reservations` quando ainda não havia período de disponibilidade selecionado.
+- A query `reservation.checkAvailability` agora recebe um input seguro mesmo quando `availabilityDates` é `null`.
+- As queries de detalhe e timeline também passaram a montar inputs seguros quando não há `detailId`.
+- Adicionados testes para evitar regressão de inputs avaliados antes do `enabled` do React Query.
+
+Causa:
+
+- O React Query/tRPC avalia o input da query antes de considerar `enabled`.
+- A tela acessava `availabilityDates!.startDate` e `availabilityDates!.endDate` durante o render, causando `TypeError` quando `availabilityDates` era `null`.
+
+Arquivos ajustados:
+
+- `client/src/pages/Reservations.tsx`
+- `shared/reservationQueryInputs.ts`
+- `server/routers.test.ts`
+- `docs/changelog.md`
+
+Validações:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou com 2 arquivos e 78 testes.
+- `corepack pnpm build`: passou fora do sandbox apos `spawn EPERM`; manteve apenas o alerta conhecido de chunk frontend acima de 500 kB.
+
+Validação manual:
+
+- Pendente após deploy: abrir `/reservations`, abrir/fechar "Nova Reserva" sem datas, selecionar datas válidas e abrir detalhe via `?detail=ID`.
+
 ## 2026-04-29 - Estabilizacao da sessao Supabase no ReservAI
 
 Resumo:
