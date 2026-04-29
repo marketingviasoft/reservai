@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-04-29 - Validacao funcional no ambiente publicado
+
+Resumo:
+
+- Registrada a validacao manual dos fluxos criticos no ambiente publicado.
+- Fluxos validados: login valido, navegacao autenticada, cadastro de equipamento, abertura de Reservas sem crash, criacao de reserva, detalhe da reserva, cancelamento de reserva pendente, check-out e check-in.
+- A timeline de auditoria exibiu eventos reais para criacao, cancelamento, check-out e check-in.
+- A tabela `public.reservation_events` foi verificada no Supabase com eventos reais e transicoes corretas.
+
+Eventos observados:
+
+- `reservation_created`.
+- `reservation_cancelled`.
+- `reservation_checked_out`.
+- `reservation_checked_in`.
+
+Transicoes observadas:
+
+- sem status -> `pendente`.
+- `pendente` -> `cancelada`.
+- `pendente` -> `ativa`.
+- `ativa` -> `concluida`.
+
+Impacto em produto:
+
+- O MVP esta validado funcionalmente nos principais fluxos tecnicos publicados.
+- Esta validacao nao substitui piloto operacional controlado com multiplos usuarios reais e maior volume de equipamentos.
+
+Impacto tecnico:
+
+- Nenhum codigo, schema ou migration foi alterado nesta etapa.
+- A documentacao foi atualizada para remover a pendencia de validacao funcional da auditoria no app conectado.
+
+Validações:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou com 2 arquivos e 78 testes.
+- `corepack pnpm build`: passou fora do sandbox apos `spawn EPERM`; manteve apenas o alerta conhecido de chunk frontend acima de 500 kB.
+
+Pendencia conhecida:
+
+- Realizar piloto operacional controlado com usuarios reais antes de ampliar o uso.
+
 ## 2026-04-29 - Correção do crash em Reservas sem datas
 
 Resumo:
@@ -29,7 +72,7 @@ Validações:
 
 Validação manual:
 
-- Pendente após deploy: abrir `/reservations`, abrir/fechar "Nova Reserva" sem datas, selecionar datas válidas e abrir detalhe via `?detail=ID`.
+- Concluida no ambiente publicado: `/reservations` abriu sem crash, reservas foram criadas, detalhes foram abertos e a timeline exibiu eventos reais.
 
 ## 2026-04-29 - Estabilizacao da sessao Supabase no ReservAI
 
@@ -75,7 +118,7 @@ Validações:
 
 Validação manual:
 
-- Pendente no ambiente publicado/conectado com credenciais reais: login válido, refresh pós-login, navegação por Dashboard/Equipamentos/Reservas/Calendário, logout, senha inválida, usuário inexistente e Network de `/api/trpc/auth.me`.
+- Parcialmente concluida no ambiente publicado: login valido e navegacao autenticada foram validados. Testes negativos de senha invalida/usuario inexistente seguem como validacao complementar recomendada.
 
 ## 2026-04-29 - Correção do CancelledError no login
 
@@ -110,7 +153,7 @@ Validações:
 
 Validação manual:
 
-- Pendente no ambiente publicado/conectado com credenciais reais: login válido, senha inválida, usuário inexistente, logout, refresh pós-login, Dashboard e `/items`.
+- Parcialmente concluida no ambiente publicado: login valido e navegacao autenticada foram validados. Testes negativos de senha invalida/usuario inexistente seguem como validacao complementar recomendada.
 
 ## 2026-04-29 - Correcao do status da auditoria no banco
 
@@ -120,12 +163,12 @@ Resumo:
 - Durante a tentativa de aplicacao, o banco retornou erro informando que `reservation_event_type` ja existia.
 - O diagnostico confirmou que `public.reservation_events` tambem existe no banco verificado.
 - A documentacao nao trata mais a migration de auditoria como genericamente pendente de aplicacao.
-- A pendencia atual passa a ser validacao funcional pelo app conectado.
+- A pendencia passou a ser validacao funcional pelo app conectado; essa pendencia foi concluida posteriormente em 2026-04-29.
 
 Estado documentado:
 
 - Estrutura de auditoria disponivel no banco verificado.
-- Validacao funcional ainda pendente para confirmar geracao real de `reservation_created`, `reservation_cancelled`, `reservation_checked_out` e `reservation_checked_in`.
+- Validacao funcional concluida posteriormente em 2026-04-29 para `reservation_created`, `reservation_cancelled`, `reservation_checked_out` e `reservation_checked_in`.
 
 Impacto tecnico:
 
@@ -159,7 +202,7 @@ Validacoes:
 
 Pendencias conhecidas:
 
-- Validar funcionalmente pelo app conectado a geracao de eventos em `public.reservation_events`.
+- Validacao funcional da auditoria pelo app conectado concluida posteriormente em 2026-04-29.
 - Avaliar code splitting futuramente para o alerta de chunk acima de 500 kB.
 
 ## 2026-04-28 - Revisao das visoes operacionais
@@ -206,7 +249,7 @@ Comandos executados:
 - `corepack pnpm check`: passou.
 - `corepack pnpm test`: passou. Resultado: 2 arquivos, 58 testes.
 - `corepack pnpm build`: passou fora do sandbox apos `spawn EPERM`; manteve apenas o alerta ja conhecido de chunk frontend acima de 500 kB.
-- `corepack pnpm db:push`: tentativa no sandbox falhou com `spawn EPERM`; execucao fora do sandbox foi bloqueada por seguranca porque poderia aplicar migrations em um `DATABASE_URL` nao verificado. Status corrigido em 2026-04-29: o banco verificado ja possui `reservation_event_type` e `public.reservation_events`; a pendencia atual e validacao funcional pelo app conectado.
+- `corepack pnpm db:push`: tentativa no sandbox falhou com `spawn EPERM`; execucao fora do sandbox foi bloqueada por seguranca porque poderia aplicar migrations em um `DATABASE_URL` nao verificado. Status corrigido em 2026-04-29: o banco verificado ja possui `reservation_event_type` e `public.reservation_events`; a validacao funcional pelo app conectado foi concluida posteriormente em 2026-04-29.
 
 ## 2026-04-28 - Combos como atalhos de selecao
 

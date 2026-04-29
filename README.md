@@ -54,7 +54,7 @@ corepack pnpm build
 Validacao recente registrada:
 
 - `corepack pnpm check`: passou.
-- `corepack pnpm test`: passou com 2 arquivos e 66 testes.
+- `corepack pnpm test`: passou com 2 arquivos e 78 testes.
 - `corepack pnpm build`: passou localmente.
 - O alerta de chunk frontend acima de 500 kB e conhecido e nao bloqueante.
 
@@ -73,7 +73,9 @@ Status da auditoria no banco:
 - Durante a tentativa de aplicacao de `drizzle/0002_small_karnak.sql`, o banco informou que o enum `reservation_event_type` ja existia.
 - O diagnostico confirmou que `public.reservation_events` tambem existe no banco verificado.
 - A estrutura de auditoria esta disponivel no banco verificado.
-- Ainda falta validacao funcional pelo app conectado para confirmar a geracao real de `reservation_created`, `reservation_cancelled`, `reservation_checked_out` e `reservation_checked_in`.
+- No ambiente publicado, foram validados eventos reais para `reservation_created`, `reservation_cancelled`, `reservation_checked_out` e `reservation_checked_in`.
+- As transicoes observadas foram: sem status -> `pendente`, `pendente` -> `cancelada`, `pendente` -> `ativa` e `ativa` -> `concluida`.
+- Ainda falta piloto operacional controlado com multiplos usuarios reais e volume maior de equipamentos.
 
 ## Variaveis de ambiente
 

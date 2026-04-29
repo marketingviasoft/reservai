@@ -45,9 +45,32 @@ Nenhuma migracao de banco ou alteracao de regra de negocio foi feita neste basel
 ### Validacao recente de 2026-04-29
 
 - `corepack pnpm check`: passou.
-- `corepack pnpm test`: passou com 2 arquivos e 66 testes.
+- `corepack pnpm test`: passou com 2 arquivos e 78 testes.
 - `corepack pnpm build`: passou localmente.
 - O alerta de chunk frontend acima de 500 kB permanece conhecido e nao bloqueante.
+
+### Validacao funcional no ambiente publicado
+
+Os fluxos criticos do ReservAI foram validados manualmente no ambiente publicado em 2026-04-29:
+
+- login valido e navegacao autenticada;
+- cadastro de equipamento fisico;
+- abertura da tela de Reservas sem crash;
+- criacao de reserva;
+- abertura do detalhe da reserva;
+- timeline exibindo `reservation_created`;
+- cancelamento de reserva pendente exibindo `reservation_cancelled`;
+- check-out exibindo `reservation_checked_out`;
+- check-in exibindo `reservation_checked_in`.
+
+A tabela `public.reservation_events` foi verificada no Supabase e contem eventos reais com transicoes:
+
+- sem status -> `pendente`;
+- `pendente` -> `cancelada`;
+- `pendente` -> `ativa`;
+- `ativa` -> `concluida`.
+
+Essa validacao confirma o MVP em nivel funcional tecnico. Ainda falta piloto operacional controlado com multiplos usuarios reais e volume maior de equipamentos.
 
 ### Frontend implementado
 
@@ -141,7 +164,8 @@ Pontos ainda desalinhados:
 - O controle de acesso de reservas foi endurecido no estado atual: colaborador ve apenas reservas proprias, `cancel` e `update` validam dono/status, `checkout`/`checkin` exigem admin. Reserva ativa nao pode ser cancelada; deve passar por check-in. Ainda falta decidir se havera papel operacional separado de admin.
 - O Dashboard exibe `totalKits` apenas como quantidade de combos/atalhos cadastrados; essa metrica nao representa equipamento fisico.
 - A tentativa de aplicar `drizzle/0002_small_karnak.sql` retornou erro porque `reservation_event_type` ja existia; o diagnostico confirmou que `public.reservation_events` tambem existe no banco verificado.
-- A estrutura de auditoria esta disponivel no banco verificado, mas ainda falta validacao funcional pelo app conectado para confirmar geracao real de eventos em criacao, cancelamento, check-out e check-in.
+- A auditoria foi validada funcionalmente no ambiente publicado: criacao, cancelamento, check-out e check-in geraram eventos reais em `public.reservation_events` com transicoes corretas.
+- Ainda falta piloto operacional controlado com multiplos usuarios reais e volume maior de equipamentos antes de considerar o produto validado operacionalmente.
 - O build passa, mas o Vite alerta que o bundle frontend principal passa de 500 kB apos minificacao. Isso nao bloqueia deploy, mas pode virar pauta de otimizacao.
 
 ## 3. Stack Tecnologico
@@ -344,6 +368,7 @@ Estado atual:
 - eventos sao criados pelo backend nas mutations reais, sem rota publica de criacao/edicao/delecao;
 - detalhe da reserva exibe uma timeline simples de auditoria;
 - existe historico por usuario e listagem por status;
+- fluxos publicados validaram eventos reais para criacao, cancelamento, check-out e check-in;
 - reservas antigas podem aparecer sem eventos historicos, sem quebrar a tela.
 
 ## 5. Arquitetura do Banco de Dados
@@ -525,7 +550,7 @@ Observacao importante:
 - nao ha mutation de frontend/API para adulterar auditoria diretamente;
 - reservas antigas podem nao ter eventos anteriores a criacao dessa tabela.
 - `reservation_event_type` e `public.reservation_events` existem no banco verificado.
-- pendencia atual: validar funcionalmente pelo app conectado se criacao, cancelamento, check-out e check-in persistem eventos reais.
+- criacao, cancelamento, check-out e check-in foram validados no ambiente publicado e persistiram eventos reais com transicoes esperadas.
 
 ### Leitura arquitetural do dominio
 
@@ -561,7 +586,7 @@ Opcional, mas fortemente recomendado para fases futuras:
 
 ### Prioridade 1 - alinhar dominio ao negocio final
 
-- Validar funcionalmente a auditoria no app conectado, confirmando eventos reais em criacao, cancelamento, check-out e check-in.
+- Conduzir piloto operacional controlado com usuarios reais e volume maior de equipamentos.
 - Decidir quando a tabela tecnica `kits` sera renomeada ou substituida por `combos/templates`.
 - Planejar migracao futura para remover `kitId` de `reservation_items` apos validar se ha reservas antigas dependentes dessa coluna.
 
@@ -595,7 +620,7 @@ Opcional, mas fortemente recomendado para fases futuras:
 Se precisarmos continuar o desenvolvimento agora, a ordem mais segura e:
 
 1. validar se existem reservas antigas com `reservation_items.kitId`;
-2. validar funcionalmente a geracao de eventos em `public.reservation_events` pelo app conectado antes de depender da timeline de auditoria em producao;
+2. planejar piloto operacional controlado com usuarios reais antes de ampliar uso;
 3. planejar migracao para remover `kitId` de `reservation_items`, se aplicavel;
 4. decidir quando renomear a tabela tecnica `kits` para `combos/templates`;
 5. decidir proximos eventos de auditoria para itens fisicos;

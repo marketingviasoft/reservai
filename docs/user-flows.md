@@ -129,7 +129,26 @@
 6. Reservas antigas sem eventos exibem a mensagem: `Nenhum evento de auditoria registrado para esta reserva.`
 7. A UI apenas consulta eventos; criacao, edicao e exclusao de auditoria nao sao expostas ao frontend.
 8. `reservation_event_type` e `public.reservation_events` existem no banco verificado.
-9. Ainda falta validacao funcional pelo app conectado para confirmar que novos eventos sao persistidos em criacao, cancelamento, check-out e check-in.
+9. No ambiente publicado, foram validados eventos reais para `reservation_created`, `reservation_cancelled`, `reservation_checked_out` e `reservation_checked_in`.
+10. As transicoes observadas foram: sem status -> `pendente`, `pendente` -> `cancelada`, `pendente` -> `ativa` e `ativa` -> `concluida`.
+11. Ainda falta piloto operacional controlado com multiplos usuarios reais e volume maior de equipamentos.
+
+## Validacao funcional no ambiente publicado
+
+Fluxos criticos validados manualmente no ambiente publicado:
+
+1. Login valido.
+2. Navegacao autenticada.
+3. Cadastro de equipamento fisico.
+4. Abertura da tela de Reservas sem crash.
+5. Criacao de reserva.
+6. Abertura do detalhe da reserva.
+7. Timeline exibindo `reservation_created`.
+8. Cancelamento de reserva pendente exibindo `reservation_cancelled`.
+9. Check-out exibindo `reservation_checked_out`.
+10. Check-in exibindo `reservation_checked_in`.
+
+Essa validacao confirma os fluxos tecnicos principais do MVP. Ela nao substitui um piloto operacional real com multiplos usuarios e maior volume de equipamentos.
 
 ## Calendario
 
