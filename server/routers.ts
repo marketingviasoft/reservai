@@ -5,6 +5,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import { storagePut } from "./storage";
+import { getAuthDiagnostics } from "./authDiagnostics";
 import {
   assertAdminReservationOperator,
   assertCanCancelReservation,
@@ -454,6 +455,13 @@ const dashboardRouter = router({
 export const appRouter = router({
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
+    session: publicProcedure.query((opts) => ({
+      user: opts.ctx.user,
+      authenticated: Boolean(opts.ctx.user),
+      hasAuthorizationHeader: opts.ctx.auth.hasAuthorizationHeader,
+      authError: opts.ctx.user ? null : opts.ctx.auth.error,
+    })),
+    diagnostics: publicProcedure.query(() => getAuthDiagnostics()),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });

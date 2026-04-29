@@ -1035,6 +1035,35 @@ async function storagePut(relKey, data, contentType = "application/octet-stream"
   return { key, url: publicUrlData.publicUrl };
 }
 
+// shared/authDiagnostics.ts
+function getHostFromUrl(value) {
+  if (!value) return null;
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+function buildAuthDiagnostics(input) {
+  return {
+    hasDatabaseUrl: Boolean(input.databaseUrl),
+    hasSupabaseUrl: Boolean(input.supabaseUrl),
+    hasSupabaseAnonKey: Boolean(input.supabaseAnonKey),
+    supabaseHost: getHostFromUrl(input.supabaseUrl),
+    nodeEnv: input.nodeEnv ?? ""
+  };
+}
+
+// server/authDiagnostics.ts
+function getAuthDiagnostics() {
+  return buildAuthDiagnostics({
+    databaseUrl: ENV.databaseUrl,
+    supabaseUrl: ENV.supabaseUrl,
+    supabaseAnonKey: ENV.supabaseAnonKey,
+    nodeEnv: process.env.NODE_ENV
+  });
+}
+
 // server/reservationAccess.ts
 import { TRPCError as TRPCError2 } from "@trpc/server";
 function isAdmin(actor) {
@@ -1425,6 +1454,13 @@ var dashboardRouter = router({
 var appRouter = router({
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
+    session: publicProcedure.query((opts) => ({
+      user: opts.ctx.user,
+      authenticated: Boolean(opts.ctx.user),
+      hasAuthorizationHeader: opts.ctx.auth.hasAuthorizationHeader,
+      authError: opts.ctx.user ? null : opts.ctx.auth.error
+    })),
+    diagnostics: publicProcedure.query(() => getAuthDiagnostics()),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -1529,10 +1565,16 @@ var sdk = new SDKServer();
 // server/_core/context.ts
 async function createContext(opts) {
   let user = null;
+  const hasAuthorizationHeader = Boolean(opts.req.headers.authorization);
+  let authError = null;
   if (process.env.NODE_ENV !== "production" && !ENV.supabaseUrl) {
     return {
       req: opts.req,
       res: opts.res,
+      auth: {
+        hasAuthorizationHeader,
+        error: null
+      },
       user: {
         id: 1,
         openId: "local-dev-user",
@@ -1549,15 +1591,24 @@ async function createContext(opts) {
       }
     };
   }
-  try {
-    user = await sdk.authenticateRequest(opts.req);
-  } catch (error) {
-    user = null;
+  if (hasAuthorizationHeader) {
+    try {
+      user = await sdk.authenticateRequest(opts.req);
+    } catch (error) {
+      authError = {
+        message: error instanceof Error ? error.message : "Authentication failed"
+      };
+      user = null;
+    }
   }
   return {
     req: opts.req,
     res: opts.res,
-    user
+    user,
+    auth: {
+      hasAuthorizationHeader,
+      error: authError
+    }
   };
 }
 

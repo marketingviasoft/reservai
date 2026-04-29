@@ -35,18 +35,25 @@ export function AuthForm() {
 
   const refreshReservAiUser = async (message: string) => {
     try {
-      const user = await utils.auth.me.fetch();
-      if (!user) {
-        throw new Error(message);
+      const session = await utils.auth.session.fetch();
+      if (!session.user) {
+        const detail = session.authError?.message
+          ? ` Detalhe: ${session.authError.message}`
+          : "";
+        throw new Error(`${message}${detail}`);
       }
-      utils.auth.me.setData(undefined, user);
+      utils.auth.me.setData(undefined, session.user);
+      utils.auth.session.setData(undefined, session);
     } catch (error) {
       if (!isCancelledError(error)) throw error;
 
       // A troca de estado do Supabase pode cancelar uma refetch em andamento.
       // Nesse caso, nao exibimos erro ao usuario; deixamos o useAuth refazer auth.me.
       try {
-        await utils.auth.me.invalidate();
+        await Promise.all([
+          utils.auth.me.invalidate(),
+          utils.auth.session.invalidate(),
+        ]);
       } catch (invalidateError) {
         if (!isCancelledError(invalidateError)) throw invalidateError;
       }

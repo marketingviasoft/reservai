@@ -77,7 +77,7 @@ export default function DashboardLayout({
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
-  const { loading, user } = useAuth();
+  const { error, hasSupabaseSession, loading, logout, refresh, user } = useAuth();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -85,6 +85,47 @@ export default function DashboardLayout({
 
   if (loading) {
     return <DashboardLayoutSkeleton />;
+  }
+
+  if (!user && hasSupabaseSession) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <div className="flex flex-col items-center gap-4 p-8 max-w-md w-full text-center">
+          <div className="h-14 w-14 rounded-2xl bg-destructive/10 flex items-center justify-center">
+            <Shield className="h-6 w-6 text-destructive" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">
+              Sessão não reconhecida
+            </h1>
+            <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+              Login realizado no Supabase, mas o ReservAI não conseguiu reconhecer a sessão. Verifique a configuração do ambiente ou tente novamente.
+            </p>
+            {error && (
+              <p className="text-xs text-muted-foreground mt-2">
+                {error.message}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => refresh()}
+              className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+            >
+              Tentar novamente
+            </button>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="rounded-md border px-3 py-2 text-sm font-medium"
+            >
+              Sair
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!user) {

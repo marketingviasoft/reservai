@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { buildFrontendAuthDiagnostics } from "@shared/authDiagnostics";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -14,3 +15,10 @@ export const supabase = isSupabaseConfigured
       },
     })
   : null;
+
+export function getSupabaseFrontendDiagnostics() {
+  return buildFrontendAuthDiagnostics({
+    viteSupabaseUrl: supabaseUrl,
+    viteSupabaseAnonKey: supabaseAnonKey,
+  });
+}

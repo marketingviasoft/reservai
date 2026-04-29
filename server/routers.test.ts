@@ -22,6 +22,14 @@ import {
 import { isReservationBlockingAvailability } from "../shared/reservationStatus";
 import { isCancelledError } from "../shared/authErrors";
 import {
+  buildAuthDiagnostics,
+  buildFrontendAuthDiagnostics,
+} from "../shared/authDiagnostics";
+import {
+  shouldRedirectToLoginAfterUnauthorized,
+  shouldRefreshAuthAfterUnauthorized,
+} from "../shared/authRedirect";
+import {
   buildReservationEventDescription,
   hasReservationEvents,
 } from "../shared/reservationEvents";
@@ -56,6 +64,10 @@ function createMockUser(overrides?: Partial<AuthenticatedUser>): AuthenticatedUs
 function createContext(user?: AuthenticatedUser | null): TrpcContext {
   return {
     user: user ?? null,
+    auth: {
+      hasAuthorizationHeader: false,
+      error: null,
+    },
     req: {
       protocol: "https",
       headers: {},
@@ -83,6 +95,41 @@ describe("auth.me", () => {
     expect(result?.openId).toBe("test-user-open-id");
     expect(result?.name).toBe("Test User");
   });
+
+  it("returns session diagnostics for anonymous users", async () => {
+    const ctx = createContext(null);
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.auth.session();
+
+    expect(result.user).toBeNull();
+    expect(result.authenticated).toBe(false);
+    expect(result.hasAuthorizationHeader).toBe(false);
+    expect(result.authError).toBeNull();
+  });
+
+  it("returns session user when context has authenticated user", async () => {
+    const user = createMockUser();
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.auth.session();
+
+    expect(result.user?.openId).toBe("test-user-open-id");
+    expect(result.authenticated).toBe(true);
+    expect(result.authError).toBeNull();
+  });
+
+  it("returns safe auth diagnostics", async () => {
+    const ctx = createContext(null);
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.auth.diagnostics();
+
+    expect(result).toHaveProperty("hasDatabaseUrl");
+    expect(result).toHaveProperty("hasSupabaseUrl");
+    expect(result).toHaveProperty("hasSupabaseAnonKey");
+    expect(result).toHaveProperty("supabaseHost");
+    expect(result).toHaveProperty("nodeEnv");
+    expect(JSON.stringify(result)).not.toContain("postgres://");
+  });
 });
 
 describe("auth.logout", () => {
@@ -91,6 +138,10 @@ describe("auth.logout", () => {
     const user = createMockUser();
     const ctx: TrpcContext = {
       user,
+      auth: {
+        hasAuthorizationHeader: false,
+        error: null,
+      },
       req: { protocol: "https", headers: {} } as TrpcContext["req"],
       res: {
         clearCookie: (name: string, options: Record<string, unknown>) => {
@@ -114,6 +165,71 @@ describe("auth client error helpers", () => {
     expect(isCancelledError(error)).toBe(true);
     expect(isCancelledError(new Error("Invalid login credentials"))).toBe(false);
     expect(isCancelledError("CancelledError")).toBe(false);
+  });
+
+  it("does not redirect CancelledError to login", () => {
+    expect(
+      shouldRedirectToLoginAfterUnauthorized({
+        isCancelled: true,
+        isUnauthorized: true,
+        hasSupabaseSession: false,
+      })
+    ).toBe(false);
+  });
+
+  it("refreshes auth instead of redirecting when Supabase session still exists", () => {
+    expect(
+      shouldRefreshAuthAfterUnauthorized({
+        isCancelled: false,
+        isUnauthorized: true,
+        hasSupabaseSession: true,
+      })
+    ).toBe(true);
+    expect(
+      shouldRedirectToLoginAfterUnauthorized({
+        isCancelled: false,
+        isUnauthorized: true,
+        hasSupabaseSession: true,
+      })
+    ).toBe(false);
+  });
+
+  it("redirects to login when unauthorized and no Supabase session exists", () => {
+    expect(
+      shouldRedirectToLoginAfterUnauthorized({
+        isCancelled: false,
+        isUnauthorized: true,
+        hasSupabaseSession: false,
+      })
+    ).toBe(true);
+  });
+
+  it("builds auth diagnostics without exposing secrets", () => {
+    const diagnostics = buildAuthDiagnostics({
+      databaseUrl: "postgres://user:pass@example.com/db",
+      supabaseUrl: "https://example.supabase.co",
+      supabaseAnonKey: "anon-secret-value",
+      nodeEnv: "production",
+    });
+    const frontendDiagnostics = buildFrontendAuthDiagnostics({
+      viteSupabaseUrl: "https://front.supabase.co",
+      viteSupabaseAnonKey: "vite-anon-secret",
+    });
+
+    expect(diagnostics).toEqual({
+      hasDatabaseUrl: true,
+      hasSupabaseUrl: true,
+      hasSupabaseAnonKey: true,
+      supabaseHost: "example.supabase.co",
+      nodeEnv: "production",
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain("anon-secret-value");
+    expect(frontendDiagnostics).toEqual({
+      hasViteSupabaseUrl: true,
+      hasViteSupabaseAnonKey: true,
+      viteSupabaseHost: "front.supabase.co",
+    });
+    expect(JSON.stringify(frontendDiagnostics)).not.toContain("vite-anon-secret");
   });
 });
 

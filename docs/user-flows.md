@@ -5,11 +5,14 @@
 1. Usuario acessa o frontend.
 2. Cliente usa Supabase Auth quando `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` estao configuradas.
 3. Backend autentica chamadas tRPC pelo contexto em `server/_core/context.ts` e SDK em `server/_core/sdk.ts`.
-4. Apos login com Supabase, o frontend confirma que a sessao possui token e atualiza `auth.me`.
-5. O listener de mudanca de sessao invalida somente `auth.me`, evitando cancelar queries operacionais durante login/logout.
-6. Cancelamentos internos de query nao sao exibidos como erro de senha ou falha de autenticacao.
-7. Erros reais do Supabase, como senha invalida ou usuario inexistente, continuam sendo exibidos ao usuario.
-8. Em desenvolvimento sem Supabase configurado, o backend usa um usuario local admin.
+4. Apos login com Supabase, o frontend confirma que a sessao possui token e atualiza `auth.session`/`auth.me`.
+5. O listener de mudanca de sessao invalida somente queries de autenticacao, evitando cancelar queries operacionais durante login/logout.
+6. Se uma query protegida retornar `UNAUTHORIZED`, o frontend verifica primeiro se ainda existe sessao Supabase antes de redirecionar para login.
+7. Se existe sessao Supabase, o ReservAI tenta refazer `auth.session`/`auth.me` e mostra erro util se o backend nao reconhecer a sessao.
+8. Cancelamentos internos de query nao sao exibidos como erro de senha ou falha de autenticacao.
+9. Erros reais do Supabase, como senha invalida ou usuario inexistente, continuam sendo exibidos ao usuario.
+10. `auth.diagnostics` expõe somente flags/host nao sensiveis para diagnostico de ambiente.
+11. Em desenvolvimento sem Supabase configurado, o backend usa um usuario local admin.
 
 ## Dashboard
 

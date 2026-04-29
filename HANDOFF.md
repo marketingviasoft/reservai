@@ -67,7 +67,7 @@ O layout principal esta pronto, com sidebar, branding ReservAI, protecao basica 
 
 Rotas tRPC existentes:
 
-- `auth`: `me`, `logout`
+- `auth`: `me`, `session`, `diagnostics`, `logout`
 - `category`: CRUD
 - `item`: CRUD, listagem, detalhe e upload de foto
 - `kit`: CRUD e vinculacao de itens
@@ -79,8 +79,10 @@ Rotas tRPC existentes:
 O backend ja possui:
 
 - autenticacao via Supabase Auth;
-- login via Supabase confirma sessao/token antes de atualizar `auth.me`;
-- o listener de mudanca de sessao invalida apenas `auth.me`, evitando cancelamento amplo de queries durante login/logout;
+- login via Supabase confirma sessao/token antes de atualizar `auth.session`/`auth.me`;
+- `auth.session` diferencia anonimo real de falha de reconhecimento quando existe token;
+- `auth.diagnostics` expõe apenas flags/host nao sensiveis de ambiente;
+- o listener de mudanca de sessao invalida apenas queries de autenticacao, evitando cancelamento amplo de queries durante login/logout;
 - RBAC basico com `adminProcedure` e `protectedProcedure`;
 - persistencia em Postgres/Supabase via Drizzle ORM;
 - upload de imagens para storage via URL pre-assinada.

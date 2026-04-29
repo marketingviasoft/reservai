@@ -7,17 +7,27 @@ export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
   user: User | null;
+  auth: {
+    hasAuthorizationHeader: boolean;
+    error: { message: string } | null;
+  };
 };
 
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
   let user: User | null = null;
+  const hasAuthorizationHeader = Boolean(opts.req.headers.authorization);
+  let authError: { message: string } | null = null;
 
   if (process.env.NODE_ENV !== "production" && !ENV.supabaseUrl) {
     return {
       req: opts.req,
       res: opts.res,
+      auth: {
+        hasAuthorizationHeader,
+        error: null,
+      },
       user: {
         id: 1,
         openId: "local-dev-user",
@@ -35,16 +45,27 @@ export async function createContext(
     };
   }
 
-  try {
-    user = await sdk.authenticateRequest(opts.req);
-  } catch (error) {
-    // Authentication is optional for public procedures.
-    user = null;
+  if (hasAuthorizationHeader) {
+    try {
+      user = await sdk.authenticateRequest(opts.req);
+    } catch (error) {
+      // Authentication is optional for public procedures, but keep a safe reason
+      // so auth.session can distinguish anonymous access from auth failures.
+      authError = {
+        message:
+          error instanceof Error ? error.message : "Authentication failed",
+      };
+      user = null;
+    }
   }
 
   return {
     req: opts.req,
     res: opts.res,
     user,
+    auth: {
+      hasAuthorizationHeader,
+      error: authError,
+    },
   };
 }

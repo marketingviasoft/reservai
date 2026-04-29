@@ -1,5 +1,51 @@
 # Changelog
 
+## 2026-04-29 - Estabilizacao da sessao Supabase no ReservAI
+
+Resumo:
+
+- Adicionadas queries publicas seguras `auth.session` e `auth.diagnostics`.
+- `auth.session` diferencia usuario anonimo real de falha de reconhecimento quando existe header `Authorization`.
+- `auth.diagnostics` expõe apenas flags/host nao sensiveis de ambiente, sem tokens, secrets ou connection string.
+- Frontend passou a diagnosticar configuracao Supabase sem expor secrets.
+- Redirect global por `UNAUTHORIZED` agora verifica se ainda existe sessao Supabase antes de mandar para login.
+- Se existe sessao Supabase valida, o cliente tenta refazer `auth.session`/`auth.me` em vez de deslogar silenciosamente.
+- `useAuth` agora aguarda a checagem inicial de sessao Supabase e mostra estado de erro quando o Supabase autenticou, mas o ReservAI nao reconheceu a sessao.
+
+Causa provavel:
+
+- O login no Supabase podia estar correto, mas `auth.me` retornava `null` por falha de configuracao/token/upsert no backend.
+- Como o contexto de rotas publicas transforma falhas de autenticacao em `ctx.user = null`, a UI tratava essa falha como usuario anonimo e voltava para a tela de login.
+- Uma query protegida com `UNAUTHORIZED` tambem podia disparar redirect global mesmo quando o Supabase ainda tinha sessao local valida.
+
+Arquivos ajustados:
+
+- `client/src/_core/hooks/useAuth.ts`
+- `client/src/components/AuthForm.tsx`
+- `client/src/components/DashboardLayout.tsx`
+- `client/src/lib/supabase.ts`
+- `client/src/main.tsx`
+- `server/_core/context.ts`
+- `server/authDiagnostics.ts`
+- `server/routers.ts`
+- `shared/authDiagnostics.ts`
+- `shared/authRedirect.ts`
+- `shared/authErrors.ts`
+- `server/routers.test.ts`
+- `docs/changelog.md`
+- `docs/user-flows.md`
+- `HANDOFF.md`
+
+Validações:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou com 2 arquivos e 74 testes.
+- `corepack pnpm build`: passou fora do sandbox apos `spawn EPERM`; manteve apenas o alerta conhecido de chunk frontend acima de 500 kB.
+
+Validação manual:
+
+- Pendente no ambiente publicado/conectado com credenciais reais: login válido, refresh pós-login, navegação por Dashboard/Equipamentos/Reservas/Calendário, logout, senha inválida, usuário inexistente e Network de `/api/trpc/auth.me`.
+
 ## 2026-04-29 - Correção do CancelledError no login
 
 Resumo:
