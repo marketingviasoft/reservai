@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-04-29 - Correção do CancelledError no login
+
+Resumo:
+
+- Corrigido o fluxo pós-login para não exibir `CancelledError` como falha de autenticação.
+- `AuthForm` agora confirma a sessão Supabase antes de atualizar `auth.me`.
+- Cancelamentos internos de React Query/tRPC são ignorados no toast de login, sem mascarar erros reais do Supabase.
+- O listener global de Supabase deixou de invalidar todas as queries e passou a invalidar somente `auth.me`, sem cancelar refetch em andamento.
+
+Causa provável:
+
+- `supabase.auth.signInWithPassword` atualizava o estado da sessão e disparava `onAuthStateChange`.
+- O listener global chamava `queryClient.invalidateQueries()` para todas as queries.
+- Essa invalidação podia cancelar `utils.auth.me.fetch()` durante o login, propagando `CancelledError` para o toast.
+
+Arquivos ajustados:
+
+- `client/src/components/AuthForm.tsx`
+- `client/src/main.tsx`
+- `shared/authErrors.ts`
+- `server/routers.test.ts`
+- `docs/changelog.md`
+- `docs/user-flows.md`
+- `HANDOFF.md`
+
+Validações:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou com 2 arquivos e 67 testes.
+- `corepack pnpm build`: passou fora do sandbox apos `spawn EPERM`; manteve apenas o alerta conhecido de chunk frontend acima de 500 kB.
+
+Validação manual:
+
+- Pendente no ambiente publicado/conectado com credenciais reais: login válido, senha inválida, usuário inexistente, logout, refresh pós-login, Dashboard e `/items`.
+
 ## 2026-04-29 - Correcao do status da auditoria no banco
 
 Resumo:

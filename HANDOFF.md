@@ -79,6 +79,8 @@ Rotas tRPC existentes:
 O backend ja possui:
 
 - autenticacao via Supabase Auth;
+- login via Supabase confirma sessao/token antes de atualizar `auth.me`;
+- o listener de mudanca de sessao invalida apenas `auth.me`, evitando cancelamento amplo de queries durante login/logout;
 - RBAC basico com `adminProcedure` e `protectedProcedure`;
 - persistencia em Postgres/Supabase via Drizzle ORM;
 - upload de imagens para storage via URL pre-assinada.

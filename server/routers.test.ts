@@ -20,6 +20,7 @@ import {
   buildReservationItemSelection,
 } from "./reservationSelection";
 import { isReservationBlockingAvailability } from "../shared/reservationStatus";
+import { isCancelledError } from "../shared/authErrors";
 import {
   buildReservationEventDescription,
   hasReservationEvents,
@@ -102,6 +103,17 @@ describe("auth.logout", () => {
     expect(result).toEqual({ success: true });
     expect(clearedCookies).toHaveLength(1);
     expect(clearedCookies[0]?.name).toBe(COOKIE_NAME);
+  });
+});
+
+describe("auth client error helpers", () => {
+  it("identifies query cancellation errors", () => {
+    const error = new Error("CancelledError");
+    error.name = "CancelledError";
+
+    expect(isCancelledError(error)).toBe(true);
+    expect(isCancelledError(new Error("Invalid login credentials"))).toBe(false);
+    expect(isCancelledError("CancelledError")).toBe(false);
   });
 });
 

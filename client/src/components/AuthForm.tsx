@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { trpc } from "@/lib/trpc";
+import { isCancelledError } from "@shared/authErrors";
 import { Loader2 } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { toast } from "sonner";
@@ -17,6 +18,41 @@ export function AuthForm() {
   const [loading, setLoading] = useState(false);
   const utils = trpc.useUtils();
 
+  const ensureSupabaseSession = async (
+    session?: { access_token?: string } | null
+  ) => {
+    if (session?.access_token) return;
+    if (!supabase) return;
+
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    if (!data.session?.access_token) {
+      throw new Error(
+        "Login feito no Supabase, mas a sessao ainda nao esta disponivel. Tente novamente.",
+      );
+    }
+  };
+
+  const refreshReservAiUser = async (message: string) => {
+    try {
+      const user = await utils.auth.me.fetch();
+      if (!user) {
+        throw new Error(message);
+      }
+      utils.auth.me.setData(undefined, user);
+    } catch (error) {
+      if (!isCancelledError(error)) throw error;
+
+      // A troca de estado do Supabase pode cancelar uma refetch em andamento.
+      // Nesse caso, nao exibimos erro ao usuario; deixamos o useAuth refazer auth.me.
+      try {
+        await utils.auth.me.invalidate();
+      } catch (invalidateError) {
+        if (!isCancelledError(invalidateError)) throw invalidateError;
+      }
+    }
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!supabase) return;
@@ -24,17 +60,15 @@ export function AuthForm() {
     setLoading(true);
     try {
       if (mode === "signin") {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         if (error) throw error;
-        const user = await utils.auth.me.fetch();
-        if (!user) {
-          throw new Error(
-            "Login feito no Supabase, mas o ReservAI ainda nao reconheceu a sessao. Tente atualizar a pagina.",
-          );
-        }
+        await ensureSupabaseSession(data.session);
+        await refreshReservAiUser(
+          "Login feito no Supabase, mas o ReservAI ainda nao reconheceu a sessao. Tente atualizar a pagina.",
+        );
         toast.success("Login realizado");
       } else {
         const { data, error } = await supabase.auth.signUp({
@@ -49,18 +83,19 @@ export function AuthForm() {
         });
         if (error) throw error;
         if (data.session) {
-          const user = await utils.auth.me.fetch();
-          if (!user) {
-            throw new Error(
-              "Conta criada, mas o ReservAI ainda nao reconheceu a sessao. Tente atualizar a pagina.",
-            );
-          }
+          await ensureSupabaseSession(data.session);
+          await refreshReservAiUser(
+            "Conta criada, mas o ReservAI ainda nao reconheceu a sessao. Tente atualizar a pagina.",
+          );
           toast.success("Conta criada");
         } else {
           toast.success("Conta criada. Verifique seu e-mail para confirmar o acesso.");
         }
       }
     } catch (error) {
+      if (isCancelledError(error)) {
+        return;
+      }
       const message =
         error instanceof Error ? error.message : "Nao foi possivel autenticar";
       toast.error(message);
