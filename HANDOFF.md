@@ -1,6 +1,6 @@
 # HANDOFF - ReservAI
 
-_Ultima atualizacao: 2026-04-28_
+_Ultima atualizacao: 2026-04-29_
 
 ## 1. Visao Geral do Projeto
 
@@ -41,6 +41,13 @@ Comandos validados:
 - `corepack pnpm build`: passou fora do sandbox. O build gerou frontend Vite, bundle server em `dist/index.js` e bundle Vercel em `api/index.js`; houve apenas alerta nao bloqueante de chunk frontend acima de 500 kB.
 
 Nenhuma migracao de banco ou alteracao de regra de negocio foi feita neste baseline.
+
+### Validacao recente de 2026-04-29
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou com 2 arquivos e 66 testes.
+- `corepack pnpm build`: passou localmente.
+- O alerta de chunk frontend acima de 500 kB permanece conhecido e nao bloqueante.
 
 ### Frontend implementado
 
@@ -86,6 +93,7 @@ O modelo atual ja cobre o nucleo do produto:
 - combos/kits tecnicos;
 - reservas;
 - itens da reserva.
+- eventos de auditoria de reserva em `reservation_events`.
 
 Tambem ja existe uma regra anti-conflito importante:
 
@@ -113,6 +121,7 @@ Pontos aderentes:
 - criacao de reserva persistindo itens fisicos individuais em `reservation_items.itemId`;
 - cadastro de equipamento separando `status` operacional de `condition` fisica.
 - visoes operacionais revisadas: Dashboard conta equipamentos fisicos por `items`, calendario/listas respeitam escopo admin/dono, check-out lista `pendente` e check-in lista `ativa`.
+- auditoria operacional de reservas via `reservation_events`.
 
 Pontos ainda desalinhados:
 
@@ -127,6 +136,8 @@ Pontos ainda desalinhados:
 - A tela e o backend de Combos ainda usam a tabela tecnica `kits` por compatibilidade. A regra atual e que combo nao e reservavel diretamente.
 - O controle de acesso de reservas foi endurecido no estado atual: colaborador ve apenas reservas proprias, `cancel` e `update` validam dono/status, `checkout`/`checkin` exigem admin. Reserva ativa nao pode ser cancelada; deve passar por check-in. Ainda falta decidir se havera papel operacional separado de admin.
 - O Dashboard exibe `totalKits` apenas como quantidade de combos/atalhos cadastrados; essa metrica nao representa equipamento fisico.
+- A tentativa de aplicar `drizzle/0002_small_karnak.sql` retornou erro porque `reservation_event_type` ja existia; o diagnostico confirmou que `public.reservation_events` tambem existe no banco verificado.
+- A estrutura de auditoria esta disponivel no banco verificado, mas ainda falta validacao funcional pelo app conectado para confirmar geracao real de eventos em criacao, cancelamento, check-out e check-in.
 - O build passa, mas o Vite alerta que o bundle frontend principal passa de 500 kB apos minificacao. Isso nao bloqueia deploy, mas pode virar pauta de otimizacao.
 
 ## 3. Stack Tecnologico
@@ -509,6 +520,8 @@ Observacao importante:
 - eventos sao append-only no fluxo atual da aplicacao;
 - nao ha mutation de frontend/API para adulterar auditoria diretamente;
 - reservas antigas podem nao ter eventos anteriores a criacao dessa tabela.
+- `reservation_event_type` e `public.reservation_events` existem no banco verificado.
+- pendencia atual: validar funcionalmente pelo app conectado se criacao, cancelamento, check-out e check-in persistem eventos reais.
 
 ### Leitura arquitetural do dominio
 
@@ -544,6 +557,7 @@ Opcional, mas fortemente recomendado para fases futuras:
 
 ### Prioridade 1 - alinhar dominio ao negocio final
 
+- Validar funcionalmente a auditoria no app conectado, confirmando eventos reais em criacao, cancelamento, check-out e check-in.
 - Decidir quando a tabela tecnica `kits` sera renomeada ou substituida por `combos/templates`.
 - Planejar migracao futura para remover `kitId` de `reservation_items` apos validar se ha reservas antigas dependentes dessa coluna.
 
@@ -577,7 +591,8 @@ Opcional, mas fortemente recomendado para fases futuras:
 Se precisarmos continuar o desenvolvimento agora, a ordem mais segura e:
 
 1. validar se existem reservas antigas com `reservation_items.kitId`;
-2. planejar migracao para remover `kitId` de `reservation_items`, se aplicavel;
-3. decidir quando renomear a tabela tecnica `kits` para `combos/templates`;
-4. decidir proximos eventos de auditoria para itens fisicos;
-5. expandir testes automatizados antes de novas features cosmeticas.
+2. validar funcionalmente a geracao de eventos em `public.reservation_events` pelo app conectado antes de depender da timeline de auditoria em producao;
+3. planejar migracao para remover `kitId` de `reservation_items`, se aplicavel;
+4. decidir quando renomear a tabela tecnica `kits` para `combos/templates`;
+5. decidir proximos eventos de auditoria para itens fisicos;
+6. expandir testes automatizados antes de novas features cosmeticas.

@@ -110,8 +110,11 @@ No banco, o papel `user` representa o colaborador comum.
 - Admin pode consultar eventos de qualquer reserva.
 - Colaborador comum pode consultar eventos somente das proprias reservas.
 - Reservas antigas podem nao ter eventos historicos; nesse caso, a timeline aparece vazia com mensagem informativa.
+- `reservation_event_type` e `public.reservation_events` existem no banco verificado.
+- Ainda falta validacao funcional pelo app conectado para confirmar geracao real de `reservation_created`, `reservation_cancelled`, `reservation_checked_out` e `reservation_checked_in`.
 
 ## Pontos ainda abertos
 
 - Definir se kits continuam existindo ou se serao substituidos formalmente por templates/combos.
 - Definir se o processo tera aprovacao explicita antes do check-out.
+- Validar funcionalmente a persistencia dos eventos de auditoria pelo app conectado.

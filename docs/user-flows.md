@@ -36,6 +36,16 @@
 3. Combos sao atalhos de selecao, nao ativos fisicos reservaveis.
 4. Ao usar um combo numa reserva, o sistema adiciona ao carrinho apenas os equipamentos fisicos disponiveis.
 
+## Aplicacao de combo como atalho
+
+1. Usuario escolhe um periodo na criacao da reserva.
+2. Frontend consulta disponibilidade do periodo.
+3. Usuario clica em adicionar combo.
+4. Itens fisicos disponiveis do combo entram no carrinho.
+5. Itens indisponiveis sao ignorados e o usuario recebe aviso.
+6. Itens ja selecionados nao sao duplicados.
+7. A reserva final envia somente `itemIds`; novas linhas em `reservation_items` nao usam `kitId`.
+
 ## Equipe
 
 1. Usuario autenticado lista perfis.
@@ -71,6 +81,14 @@
 9. Edicoes permitidas registram `reservation_updated`.
 10. Cancelamentos permitidos registram `reservation_cancelled`.
 
+## Cancelamento de reserva pendente
+
+1. Colaborador pode solicitar cancelamento apenas de reserva propria em status `pendente`.
+2. Admin pode cancelar qualquer reserva em status `pendente`.
+3. Reserva `ativa` nao pode ser cancelada; deve passar por check-in.
+4. Reservas `concluida` e `cancelada` nao podem ser canceladas novamente.
+5. Backend e a fonte final dessa regra; a UI apenas esconde a acao quando ela nao e permitida.
+
 ## Check-out
 
 1. Somente admin acessa a operacao de check-out na UI.
@@ -103,6 +121,8 @@
 5. A tela exibe tipo do evento, ator, data/hora, descricao curta e transicao de status quando houver.
 6. Reservas antigas sem eventos exibem a mensagem: `Nenhum evento de auditoria registrado para esta reserva.`
 7. A UI apenas consulta eventos; criacao, edicao e exclusao de auditoria nao sao expostas ao frontend.
+8. `reservation_event_type` e `public.reservation_events` existem no banco verificado.
+9. Ainda falta validacao funcional pelo app conectado para confirmar que novos eventos sao persistidos em criacao, cancelamento, check-out e check-in.
 
 ## Calendario
 

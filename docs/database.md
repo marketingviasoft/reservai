@@ -10,6 +10,8 @@ Comandos Drizzle dependem de `DATABASE_URL`:
 corepack pnpm db:push
 ```
 
+Nao execute `db:push` sem confirmar que `DATABASE_URL` aponta para o banco correto.
+
 ## Tabelas e enums
 
 ### Enums
@@ -40,6 +42,11 @@ Campos principais:
 - `updatedAt`
 - `lastSignedIn`
 
+Relacionamentos:
+
+- 1:N com `reservations` como solicitante.
+- 1:N com `reservation_events` como ator do evento.
+
 ### `categories`
 
 Categorias de equipamentos.
@@ -52,6 +59,10 @@ Campos principais:
 - `color`
 - `createdAt`
 - `updatedAt`
+
+Relacionamentos:
+
+- 1:N com `items`.
 
 ### `items`
 
@@ -85,6 +96,14 @@ Observacoes:
 - `assetNumber` e opcional.
 - `condition` tem padrao `bom` e nao altera disponibilidade ou fluxo logistico.
 - `notes` representa observacoes de avarias no cadastro atual.
+- `status` representa estado logistico/operacional.
+- `condition` representa conservacao fisica e nao deve ser usado como disponibilidade.
+
+Relacionamentos:
+
+- N:1 com `categories`.
+- N:N com `kits` via `kit_items`.
+- N:N com `reservations` via `reservation_items`.
 
 ### `kits`
 
@@ -105,6 +124,11 @@ Campos principais:
 - `createdAt`
 - `updatedAt`
 
+Relacionamentos:
+
+- N:N com `items` via `kit_items`.
+- Compatibilidade legada com `reservation_items.kitId`; novas reservas nao usam `kitId`.
+
 ### `kit_items`
 
 Tabela pivote entre kits e itens.
@@ -115,6 +139,11 @@ Campos principais:
 - `kitId`
 - `itemId`
 - `createdAt`
+
+Relacionamentos:
+
+- N:1 com `kits`.
+- N:1 com `items`.
 
 ### `reservations`
 
@@ -134,6 +163,14 @@ Campos principais:
 - `notes`
 - `createdAt`
 - `updatedAt`
+
+Relacionamentos:
+
+- N:1 com `users` como solicitante.
+- N:1 com `users` como operador de check-out.
+- N:1 com `users` como operador de check-in.
+- 1:N com `reservation_items`.
+- 1:N com `reservation_events`.
 
 ### `reservation_items`
 
@@ -181,6 +218,21 @@ Estado atual:
 - `reservation_checked_in` registra a transicao para `concluida` e os itens devolvidos.
 - Admin consulta eventos de qualquer reserva; colaborador consulta apenas eventos das proprias reservas.
 - Reservas antigas podem nao ter eventos historicos.
+- Durante a tentativa de aplicar `drizzle/0002_small_karnak.sql`, o banco retornou erro informando que `reservation_event_type` ja existia.
+- O diagnostico confirmou que `public.reservation_events` tambem existe no banco verificado.
+- A estrutura de auditoria esta disponivel no banco verificado.
+- Ainda falta validacao funcional pelo app conectado para confirmar a geracao real de `reservation_created`, `reservation_cancelled`, `reservation_checked_out` e `reservation_checked_in`.
+
+Relacionamentos:
+
+- N:1 com `reservations`.
+- N:1 com `users` como ator.
+
+## Migrations relevantes
+
+- `drizzle/0000_handy_timeslip.sql`: baseline inicial do schema.
+- `drizzle/0001_cheerful_tomas.sql`: adiciona dados de ativo fisico ao cadastro de equipamentos, incluindo `brand`, `model`, `assetNumber` e `condition`.
+- `drizzle/0002_small_karnak.sql`: cria `reservation_event_type` e `reservation_events` para auditoria operacional de reservas. A estrutura ja existe no banco verificado; nao reaplicar sem diagnostico, pois o enum/tabela ja existem.
 
 ## Variaveis de ambiente relacionadas
 
