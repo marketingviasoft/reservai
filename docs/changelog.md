@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-04-29 - Tela administrativa de Categorias
+
+Resumo:
+
+- Criada rota `/categories` para gestao administrativa de categorias.
+- Menu lateral passa a exibir `Categorias` apenas para admin.
+- Admin pode criar, editar e excluir categorias pela UI.
+- Colaborador que acessa `/categories` manualmente recebe mensagem de acesso restrito.
+- Equipamentos continuam consumindo `category.list` no filtro e no formulario; o atalho antigo abre a tela dedicada de categorias.
+- Removido o modal antigo de categorias para evitar duas experiencias divergentes.
+
+Impacto em produto:
+
+- A lacuna operacional entre cadastro de equipamento e cadastro de categoria foi fechada antes do piloto.
+- Categorias seguem organizando equipamentos fisicos por tipo de uso.
+
+Impacto tecnico:
+
+- Nenhum schema, migration, regra de reserva, auditoria, autenticacao ou check-in/check-out foi alterado.
+- Exclusao de categoria em uso segue a constraint do banco e pode falhar; a UI exibe mensagem amigavel sobre equipamentos vinculados.
+- Testes de mutacao admin validam a camada de permissao. Sem banco de teste dedicado, falha por DB ausente e aceita apenas como limitacao tecnica quando nao for `FORBIDDEN`/`UNAUTHORIZED`.
+- A cobertura automatizada da tela ficou em helpers compartilhados e router, pois o projeto ainda nao possui harness React/browser dedicado para testar renderizacao da pagina.
+
+Validações:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou com 2 arquivos e 84 testes.
+- `corepack pnpm build`: falhou no sandbox com `spawn EPERM` ao iniciar Vite/esbuild; a reexecucao fora do sandbox foi bloqueada pelo revisor automatico por limite de uso nesta rodada.
+
 ## 2026-04-29 - Validacao funcional no ambiente publicado
 
 Resumo:

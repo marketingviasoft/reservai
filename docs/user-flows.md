@@ -35,6 +35,17 @@
 5. Fotos usam Supabase Storage via `server/storage.ts`.
 6. Equipamentos sao filtraveis por categoria, status e busca.
 7. A listagem exibe codigo automatico, marca, modelo, categoria, patrimonio, serie, status operacional e estado de conservacao.
+8. Admin pode acessar `Gerenciar categorias` para abrir a tela administrativa de categorias.
+
+## Categorias
+
+1. Admin acessa `/categories` pelo menu lateral.
+2. A tela lista categorias com nome, descricao e cor.
+3. Admin pode criar, editar e excluir categorias.
+4. Exclusao exige confirmacao.
+5. Se houver equipamentos vinculados, a exclusao pode falhar conforme regra do banco; a UI exibe mensagem amigavel.
+6. Colaborador autenticado pode consumir categorias em telas operacionais, como filtro e cadastro de equipamentos quando permitido.
+7. Colaborador que acessar `/categories` manualmente ve mensagem de acesso restrito.
 
 ## Combos
 

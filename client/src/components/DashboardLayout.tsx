@@ -25,6 +25,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import {
   LayoutDashboard,
   Package,
+  Tags,
   Boxes,
   CalendarDays,
   ClipboardList,
@@ -41,6 +42,7 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Package, label: "Equipamentos", path: "/items" },
+  { icon: Tags, label: "Categorias", path: "/categories", adminOnly: true },
   { icon: Boxes, label: "Combos", path: "/kits" },
   { icon: Users, label: "Equipe", path: "/team" },
   { icon: CalendarDays, label: "Calendário", path: "/calendar" },
@@ -179,7 +181,10 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find((item) => item.path === location);
+  const visibleMenuItems = menuItems.filter(
+    (item) => !item.adminOnly || user?.role === "admin"
+  );
+  const activeMenuItem = visibleMenuItems.find((item) => item.path === location);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -240,7 +245,7 @@ function DashboardLayoutContent({
                 </p>
               )}
               <SidebarMenu>
-                {menuItems.map((item) => {
+                {visibleMenuItems.map((item) => {
                   const isActive = location === item.path;
                   return (
                     <SidebarMenuItem key={item.path}>

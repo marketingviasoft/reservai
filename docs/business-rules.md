@@ -25,8 +25,14 @@ No banco, o papel `user` representa o colaborador comum.
 ## Categorias
 
 - Categorias organizam equipamentos.
-- Mutacoes de categoria sao administrativas.
-- Leitura exige usuario autenticado.
+- Campos principais: `name`, `description` e `color`.
+- Categorias alimentam cadastro, edicao, listagem e filtro de equipamentos.
+- Admin pode listar, criar, editar e excluir categorias.
+- Colaborador autenticado pode listar categorias quando necessario para telas operacionais.
+- Colaborador comum nao pode criar, editar ou excluir categorias.
+- A tela administrativa `/categories` e exibida no menu apenas para admin.
+- Se colaborador acessar `/categories` manualmente, a UI mostra acesso restrito.
+- Exclusao de categoria pode falhar se houver equipamentos vinculados; nao ha cascade destrutivo.
 
 ## Combos
 

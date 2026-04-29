@@ -78,6 +78,7 @@ Telas principais ja existentes:
 
 - `Dashboard`: metricas de equipamentos fisicos, status operacional, reservas por status, atrasos, equipe e combos.
 - `Equipamentos`: CRUD com marca, modelo, categoria, foto, numero de serie, patrimonio, estado de conservacao, observacoes, filtros e busca.
+- `Categorias`: tela administrativa para admins criarem, editarem e excluirem categorias usadas em equipamentos.
 - `Combos`: CRUD de agrupamentos reutilizaveis de itens, usados como atalhos de selecao.
 - `Equipe`: listagem de usuarios, edicao de perfil, alteracao de role por admin e historico de reservas por usuario.
 - `Calendario`: visao dia/semana/mes com reservas por periodo, diferenciacao por status, abertura do detalhe e atalho para criar nova reserva.
@@ -147,6 +148,7 @@ Pontos aderentes:
 - `cancel` restrito a reservas pendentes; reservas ativas devem ser encerradas via check-in;
 - criacao de reserva persistindo itens fisicos individuais em `reservation_items.itemId`;
 - cadastro de equipamento separando `status` operacional de `condition` fisica.
+- categorias possuem tela administrativa propria; somente admin gerencia, enquanto colaboradores apenas consomem categorias em telas operacionais.
 - visoes operacionais revisadas: Dashboard conta equipamentos fisicos por `items`, calendario/listas respeitam escopo admin/dono, check-out lista `pendente` e check-in lista `ativa`.
 - auditoria operacional de reservas via `reservation_events`.
 
@@ -162,6 +164,8 @@ Pontos ainda desalinhados:
 - O repositorio ainda carrega alguns artefatos do template anterior, principalmente em `server/_core/*`, `client/public/__manus__/*` e plugins Manus no `vite.config.ts`. Eles sustentam parte do bootstrap atual, mas nao fazem parte do dominio central do ReservAI.
 - A tela e o backend de Combos ainda usam a tabela tecnica `kits` por compatibilidade. A regra atual e que combo nao e reservavel diretamente.
 - O controle de acesso de reservas foi endurecido no estado atual: colaborador ve apenas reservas proprias, `cancel` e `update` validam dono/status, `checkout`/`checkin` exigem admin. Reserva ativa nao pode ser cancelada; deve passar por check-in. Ainda falta decidir se havera papel operacional separado de admin.
+- Categorias usam tela administrativa em `/categories`. O menu exibe essa entrada apenas para admin; colaborador que acessa a rota manualmente recebe mensagem de acesso restrito.
+- Exclusao de categoria pode falhar quando houver equipamentos vinculados, seguindo a constraint do banco. A UI deve tratar esse erro com mensagem amigavel.
 - O Dashboard exibe `totalKits` apenas como quantidade de combos/atalhos cadastrados; essa metrica nao representa equipamento fisico.
 - A tentativa de aplicar `drizzle/0002_small_karnak.sql` retornou erro porque `reservation_event_type` ja existia; o diagnostico confirmou que `public.reservation_events` tambem existe no banco verificado.
 - A auditoria foi validada funcionalmente no ambiente publicado: criacao, cancelamento, check-out e check-in geraram eventos reais em `public.reservation_events` com transicoes corretas.

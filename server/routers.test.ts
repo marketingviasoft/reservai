@@ -41,6 +41,11 @@ import {
   isOperationalHistoryStatus,
 } from "../shared/operationalViews";
 import {
+  CATEGORY_DELETE_ERROR_MESSAGE,
+  canManageCategories,
+  getCategoryDeleteErrorMessage,
+} from "../shared/categoryUi";
+import {
   buildAvailabilityQueryInput,
   buildReservationDetailQueryInput,
   buildReservationEventsQueryInput,
@@ -82,6 +87,29 @@ function createContext(user?: AuthenticatedUser | null): TrpcContext {
       clearCookie: () => {},
     } as TrpcContext["res"],
   };
+}
+
+function getErrorCode(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code: unknown }).code)
+    : null;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function expectNotPermissionError(operation: () => Promise<unknown>) {
+  try {
+    await operation();
+  } catch (error) {
+    // Without a DB in the unit-test environment, admin mutations can still fail
+    // at persistence time. That is acceptable here only if RBAC already passed.
+    expect(getErrorCode(error)).not.toBe("FORBIDDEN");
+    expect(getErrorCode(error)).not.toBe("UNAUTHORIZED");
+    expect(getErrorMessage(error)).not.toContain("FORBIDDEN");
+    expect(getErrorMessage(error)).not.toContain("UNAUTHORIZED");
+  }
 }
 
 describe("auth.me", () => {
@@ -269,19 +297,76 @@ describe("reservation page query inputs", () => {
 });
 
 describe("category router - access control", () => {
-  it("rejects unauthenticated user from listing categories", async () => {
+  it("rejects unauthenticated user from listing categories with UNAUTHORIZED", async () => {
     const ctx = createContext(null);
     const caller = appRouter.createCaller(ctx);
-    await expect(caller.category.list()).rejects.toThrow();
+    await expect(caller.category.list()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
   });
 
-  it("rejects non-admin from creating categories", async () => {
+  it("allows authenticated collaborator to list categories", async () => {
+    const user = createMockUser({ role: "user" });
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(caller.category.list()).resolves.toEqual(expect.any(Array));
+  });
+
+  it("rejects collaborator from creating categories with FORBIDDEN", async () => {
     const user = createMockUser({ role: "user" });
     const ctx = createContext(user);
     const caller = appRouter.createCaller(ctx);
     await expect(
       caller.category.create({ name: "Test Category" })
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("rejects collaborator from updating categories with FORBIDDEN", async () => {
+    const user = createMockUser({ role: "user" });
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.category.update({ id: 1, name: "Updated Category" })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("rejects collaborator from deleting categories with FORBIDDEN", async () => {
+    const user = createMockUser({ role: "user" });
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.category.delete({ id: 1 })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("does not reject admin category mutations at the permission layer", async () => {
+    const user = createMockUser({ role: "admin" });
+    const ctx = createContext(user);
+    const caller = appRouter.createCaller(ctx);
+
+    await expectNotPermissionError(() =>
+      caller.category.create({ name: "Test Category" })
+    );
+    await expectNotPermissionError(() =>
+      caller.category.update({ id: 1, name: "Updated Category" })
+    );
+    await expectNotPermissionError(() =>
+      caller.category.delete({ id: 1 })
+    );
+  });
+});
+
+describe("category UI helpers", () => {
+  it("allows only admins to manage categories", () => {
+    expect(canManageCategories(createMockUser({ role: "admin" }))).toBe(true);
+    expect(canManageCategories(createMockUser({ role: "user" }))).toBe(false);
+    expect(canManageCategories(null)).toBe(false);
+  });
+
+  it("returns a friendly category delete error message", () => {
+    expect(getCategoryDeleteErrorMessage()).toBe(CATEGORY_DELETE_ERROR_MESSAGE);
+    expect(getCategoryDeleteErrorMessage()).toContain("equipamentos vinculados");
   });
 });
 

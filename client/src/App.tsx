@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import Home from "./pages/Home";
 import Items from "./pages/Items";
+import Categories from "./pages/Categories";
 import Kits from "./pages/Kits";
 import Team from "./pages/Team";
 import Calendar from "./pages/Calendar";
@@ -19,6 +20,7 @@ function Router() {
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/items" component={Items} />
+        <Route path="/categories" component={Categories} />
         <Route path="/kits" component={Kits} />
         <Route path="/team" component={Team} />
         <Route path="/calendar" component={Calendar} />

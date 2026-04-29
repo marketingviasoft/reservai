@@ -45,7 +45,7 @@ import {
   Hash,
 } from "lucide-react";
 import { useState, useRef } from "react";
-import CategoryManager from "@/components/CategoryManager";
+import { useLocation } from "wouter";
 
 const statusLabels: Record<string, string> = {
   disponivel: "Disponível",
@@ -111,6 +111,7 @@ export default function Items() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const utils = trpc.useUtils();
+  const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -120,7 +121,6 @@ export default function Items() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogFileInputRef = useRef<HTMLInputElement>(null);
-  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
 
   const { data: items, isLoading } = trpc.item.list.useQuery({
     search: search || undefined,
@@ -293,11 +293,11 @@ export default function Items() {
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={() => setCategoryManagerOpen(true)}
+              onClick={() => setLocation("/categories")}
               className="gap-2"
             >
               <Filter className="h-4 w-4" />
-              Categorias
+              Gerenciar categorias
             </Button>
             <Button
               onClick={() => {
@@ -745,12 +745,6 @@ export default function Items() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {isAdmin && (
-        <CategoryManager
-          open={categoryManagerOpen}
-          onOpenChange={setCategoryManagerOpen}
-        />
-      )}
     </div>
   );
 }
