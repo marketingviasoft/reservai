@@ -20,7 +20,7 @@ import {
   buildReservationItemSelection,
 } from "./reservationSelection";
 import { isReservationBlockingAvailability } from "../shared/reservationStatus";
-import { isCancelledError } from "../shared/authErrors";
+import { isCancelledError, isUserUpsertTimeoutError } from "../shared/authErrors";
 import {
   buildAuthDiagnostics,
   buildFrontendAuthDiagnostics,
@@ -199,6 +199,16 @@ describe("auth client error helpers", () => {
     expect(isCancelledError(error)).toBe(true);
     expect(isCancelledError(new Error("Invalid login credentials"))).toBe(false);
     expect(isCancelledError("CancelledError")).toBe(false);
+  });
+
+  it("identifies user upsert timeout errors", () => {
+    expect(
+      isUserUpsertTimeoutError(
+        new Error("User upsert timed out after 10000ms")
+      )
+    ).toBe(true);
+    expect(isUserUpsertTimeoutError(new Error("User lookup failed"))).toBe(false);
+    expect(isUserUpsertTimeoutError("User upsert timed out")).toBe(false);
   });
 
   it("does not redirect CancelledError to login", () => {

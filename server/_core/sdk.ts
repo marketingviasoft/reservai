@@ -1,11 +1,21 @@
 import { ForbiddenError } from "@shared/_core/errors";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  createClient,
+  type SupabaseClient,
+  type User as SupabaseUser,
+} from "@supabase/supabase-js";
 import type { Request } from "express";
-import type { User } from "../../drizzle/schema";
+import type { InsertUser, User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
 
 const AUTH_TIMEOUT_MS = 10_000;
+const pendingUserSyncs = new Map<string, Promise<void>>();
+
+type UserSyncDeps = {
+  getUserByOpenId: (openId: string) => Promise<User | undefined>;
+  upsertUser: (user: InsertUser) => Promise<void>;
+};
 
 async function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -47,6 +57,72 @@ function getSupabaseClient(): SupabaseClient {
   });
 }
 
+export function buildSupabaseUserProfile(
+  supabaseUser: Pick<SupabaseUser, "id" | "email" | "user_metadata">,
+  signedInAt = new Date()
+): InsertUser {
+  const email = supabaseUser.email ?? null;
+  const name =
+    (supabaseUser.user_metadata?.name as string | undefined) ??
+    (supabaseUser.user_metadata?.full_name as string | undefined) ??
+    email ??
+    "Usuário";
+
+  return {
+    openId: supabaseUser.id,
+    name,
+    email,
+    loginMethod: "supabase",
+    lastSignedIn: signedInAt,
+  };
+}
+
+export function shouldSyncUser(existingUser: User | undefined) {
+  return !existingUser;
+}
+
+async function syncUserOnce(profile: InsertUser, deps: UserSyncDeps) {
+  if (!profile.openId) throw new Error("Cannot sync user without openId");
+
+  const existingSync = pendingUserSyncs.get(profile.openId);
+  if (existingSync) {
+    await existingSync;
+    return;
+  }
+
+  const syncPromise = withTimeout(deps.upsertUser(profile), "User upsert")
+    .finally(() => {
+      pendingUserSyncs.delete(profile.openId!);
+    });
+  pendingUserSyncs.set(profile.openId, syncPromise);
+  await syncPromise;
+}
+
+export async function resolveAuthenticatedUserFromProfile(
+  profile: InsertUser,
+  deps: UserSyncDeps = db
+) {
+  if (!profile.openId) throw new Error("Cannot authenticate user without openId");
+
+  const existingUser = await withTimeout(
+    deps.getUserByOpenId(profile.openId),
+    "User lookup",
+  );
+  if (!shouldSyncUser(existingUser)) return existingUser;
+
+  await syncUserOnce(profile, deps);
+
+  const user = await withTimeout(
+    deps.getUserByOpenId(profile.openId),
+    "User lookup after sync",
+  );
+  if (!user) {
+    throw ForbiddenError("User not found after sync");
+  }
+
+  return user;
+}
+
 class SDKServer {
   async authenticateRequest(req: Request): Promise<User> {
     const accessToken = getBearerToken(req);
@@ -65,34 +141,8 @@ class SDKServer {
     }
 
     const supabaseUser = data.user;
-    const email = supabaseUser.email ?? null;
-    const name =
-      (supabaseUser.user_metadata?.name as string | undefined) ??
-      (supabaseUser.user_metadata?.full_name as string | undefined) ??
-      email ??
-      "Usuário";
-    const signedInAt = new Date();
-
-    await withTimeout(
-      db.upsertUser({
-        openId: supabaseUser.id,
-        name,
-        email,
-        loginMethod: "supabase",
-        lastSignedIn: signedInAt,
-      }),
-      "User upsert",
-    );
-
-    const user = await withTimeout(
-      db.getUserByOpenId(supabaseUser.id),
-      "User lookup",
-    );
-    if (!user) {
-      throw ForbiddenError("User not found");
-    }
-
-    return user;
+    const profile = buildSupabaseUserProfile(supabaseUser);
+    return resolveAuthenticatedUserFromProfile(profile);
   }
 }
 

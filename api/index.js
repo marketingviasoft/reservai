@@ -1,3 +1,9 @@
+var __defProp = Object.defineProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+
 // server/_core/loadEnv.ts
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
@@ -71,6 +77,54 @@ import { TRPCError as TRPCError3 } from "@trpc/server";
 import { z } from "zod";
 
 // server/db.ts
+var db_exports = {};
+__export(db_exports, {
+  addItemToKit: () => addItemToKit,
+  buildPhysicalReservationItems: () => buildPhysicalReservationItems,
+  buildReservationEvent: () => buildReservationEvent,
+  buildReservationUpdateMetadata: () => buildReservationUpdateMetadata,
+  checkAvailability: () => checkAvailability,
+  checkItemConflicts: () => checkItemConflicts,
+  checkKitConflicts: () => checkKitConflicts,
+  collectReservationPhysicalItemIds: () => collectReservationPhysicalItemIds,
+  countUsers: () => countUsers,
+  createCategory: () => createCategory,
+  createItem: () => createItem,
+  createKit: () => createKit,
+  createReservation: () => createReservation,
+  createReservationEvent: () => createReservationEvent,
+  deleteCategory: () => deleteCategory,
+  deleteItem: () => deleteItem,
+  deleteKit: () => deleteKit,
+  deleteReservation: () => deleteReservation,
+  getDashboardStats: () => getDashboardStats,
+  getDb: () => getDb,
+  getItemById: () => getItemById,
+  getKitById: () => getKitById,
+  getKitItemIds: () => getKitItemIds,
+  getOverdueReservations: () => getOverdueReservations,
+  getRecentReservations: () => getRecentReservations,
+  getReservationById: () => getReservationById,
+  getUserById: () => getUserById,
+  getUserByOpenId: () => getUserByOpenId,
+  getUserReservationHistory: () => getUserReservationHistory,
+  listCategories: () => listCategories,
+  listItems: () => listItems,
+  listKits: () => listKits,
+  listReservationEvents: () => listReservationEvents,
+  listReservations: () => listReservations,
+  listUsers: () => listUsers,
+  recalculateKitStatus: () => recalculateKitStatus,
+  removeItemFromKit: () => removeItemFromKit,
+  setKitItems: () => setKitItems,
+  updateCategory: () => updateCategory,
+  updateItem: () => updateItem,
+  updateKit: () => updateKit,
+  updateReservation: () => updateReservation,
+  updateUserProfile: () => updateUserProfile,
+  updateUserRole: () => updateUserRole,
+  upsertUser: () => upsertUser
+});
 import { and, eq, gte, lte, or, ne, like, inArray, sql, desc, asc, count } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -613,6 +667,16 @@ async function deleteKit(id) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(kits).where(eq(kits.id, id));
+}
+async function addItemToKit(kitId, itemId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(kitItems).values({ kitId, itemId });
+}
+async function removeItemFromKit(kitId, itemId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(kitItems).where(and(eq(kitItems.kitId, kitId), eq(kitItems.itemId, itemId)));
 }
 async function setKitItems(kitId, itemIds) {
   const db = await getDb();
@@ -1486,8 +1550,11 @@ var HttpError = class extends Error {
 var ForbiddenError = (msg) => new HttpError(403, msg);
 
 // server/_core/sdk.ts
-import { createClient as createClient2 } from "@supabase/supabase-js";
+import {
+  createClient as createClient2
+} from "@supabase/supabase-js";
 var AUTH_TIMEOUT_MS = 1e4;
+var pendingUserSyncs = /* @__PURE__ */ new Map();
 async function withTimeout(promise, label) {
   let timeout;
   const timeoutPromise = new Promise((_, reject) => {
@@ -1522,6 +1589,50 @@ function getSupabaseClient() {
     }
   });
 }
+function buildSupabaseUserProfile(supabaseUser, signedInAt = /* @__PURE__ */ new Date()) {
+  const email = supabaseUser.email ?? null;
+  const name = supabaseUser.user_metadata?.name ?? supabaseUser.user_metadata?.full_name ?? email ?? "Usu\xE1rio";
+  return {
+    openId: supabaseUser.id,
+    name,
+    email,
+    loginMethod: "supabase",
+    lastSignedIn: signedInAt
+  };
+}
+function shouldSyncUser(existingUser) {
+  return !existingUser;
+}
+async function syncUserOnce(profile, deps) {
+  if (!profile.openId) throw new Error("Cannot sync user without openId");
+  const existingSync = pendingUserSyncs.get(profile.openId);
+  if (existingSync) {
+    await existingSync;
+    return;
+  }
+  const syncPromise = withTimeout(deps.upsertUser(profile), "User upsert").finally(() => {
+    pendingUserSyncs.delete(profile.openId);
+  });
+  pendingUserSyncs.set(profile.openId, syncPromise);
+  await syncPromise;
+}
+async function resolveAuthenticatedUserFromProfile(profile, deps = db_exports) {
+  if (!profile.openId) throw new Error("Cannot authenticate user without openId");
+  const existingUser = await withTimeout(
+    deps.getUserByOpenId(profile.openId),
+    "User lookup"
+  );
+  if (!shouldSyncUser(existingUser)) return existingUser;
+  await syncUserOnce(profile, deps);
+  const user = await withTimeout(
+    deps.getUserByOpenId(profile.openId),
+    "User lookup after sync"
+  );
+  if (!user) {
+    throw ForbiddenError("User not found after sync");
+  }
+  return user;
+}
 var SDKServer = class {
   async authenticateRequest(req) {
     const accessToken = getBearerToken(req);
@@ -1537,27 +1648,8 @@ var SDKServer = class {
       throw ForbiddenError("Invalid Supabase access token");
     }
     const supabaseUser = data.user;
-    const email = supabaseUser.email ?? null;
-    const name = supabaseUser.user_metadata?.name ?? supabaseUser.user_metadata?.full_name ?? email ?? "Usu\xE1rio";
-    const signedInAt = /* @__PURE__ */ new Date();
-    await withTimeout(
-      upsertUser({
-        openId: supabaseUser.id,
-        name,
-        email,
-        loginMethod: "supabase",
-        lastSignedIn: signedInAt
-      }),
-      "User upsert"
-    );
-    const user = await withTimeout(
-      getUserByOpenId(supabaseUser.id),
-      "User lookup"
-    );
-    if (!user) {
-      throw ForbiddenError("User not found");
-    }
-    return user;
+    const profile = buildSupabaseUserProfile(supabaseUser);
+    return resolveAuthenticatedUserFromProfile(profile);
   }
 };
 var sdk = new SDKServer();

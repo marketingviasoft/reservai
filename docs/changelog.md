@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-04-30 - Reducao de upsert no reconhecimento de usuario
+
+Resumo:
+
+- Corrigido o fluxo de autenticacao backend para evitar `upsertUser` em toda request autenticada.
+- `authenticateRequest` agora valida o token Supabase, monta o perfil do usuario e busca primeiro o usuario interno por `openId`.
+- Usuario existente e retornado imediatamente, sem atualizar `lastSignedIn` nem executar upsert a cada navegacao/query.
+- `upsertUser` fica reservado para usuario ainda inexistente ou sincronizacao inicial necessaria.
+- Adicionada trava simples por `openId` para deduplicar upserts concorrentes do mesmo usuario novo.
+- A tela de sessao nao reconhecida passou a orientar retry quando o erro for timeout de upsert.
+
+Causa provavel:
+
+- O backend executava upsert do usuario em toda autenticacao de request.
+- Navegacao entre telas dispara varias queries protegidas, gerando upserts concorrentes no ambiente Vercel + Supabase/Postgres.
+- Essa carga podia provocar `User upsert timed out after 10000ms` mesmo com sessao Supabase valida.
+
+Impacto tecnico:
+
+- Nenhum schema, migration, reserva, auditoria, categoria ou check-in/check-out foi alterado.
+- Primeiro usuario/admin continua passando pela logica existente de `upsertUser`, mas somente quando o usuario ainda nao existe.
+- Testes cobrem usuario existente sem upsert, usuario novo com upsert unico, upsert concorrente deduplicado, erro de lookup diagnostico e helper de timeout.
+
+Validações:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou com 3 arquivos e 93 testes.
+- `corepack pnpm build`: passou fora do sandbox apos `spawn EPERM`; manteve apenas o alerta conhecido de chunk frontend acima de 500 kB.
+
 ## 2026-04-29 - Tela administrativa de Categorias
 
 Resumo:

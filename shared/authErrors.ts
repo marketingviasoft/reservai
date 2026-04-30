@@ -7,3 +7,8 @@ export function isCancelledError(error: unknown) {
     error.constructor.name === "CancelledError"
   );
 }
+
+export function isUserUpsertTimeoutError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return error.message.includes("User upsert timed out");
+}

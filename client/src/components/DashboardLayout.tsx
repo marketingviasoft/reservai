@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AuthForm } from "@/components/AuthForm";
+import { isUserUpsertTimeoutError } from "@shared/authErrors";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -80,6 +81,7 @@ export default function DashboardLayout({
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
   const { error, hasSupabaseSession, loading, logout, refresh, user } = useAuth();
+  const isUserUpsertTimeout = isUserUpsertTimeoutError(error);
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -103,6 +105,12 @@ export default function DashboardLayout({
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
               Login realizado no Supabase, mas o ReservAI não conseguiu reconhecer a sessão. Verifique a configuração do ambiente ou tente novamente.
             </p>
+            {isUserUpsertTimeout && (
+              <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                O banco demorou para sincronizar seu usuário. Use Tentar novamente;
+                se a instabilidade persistir, acione o responsável pelo sistema.
+              </p>
+            )}
             {error && (
               <p className="text-xs text-muted-foreground mt-2">
                 {error.message}
