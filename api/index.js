@@ -19,6 +19,11 @@ var ONE_YEAR_MS = 1e3 * 60 * 60 * 24 * 365;
 var UNAUTHED_ERR_MSG = "Please login (10001)";
 var NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
 
+// shared/authErrors.ts
+var USER_NOT_PROVISIONED = "USER_NOT_PROVISIONED";
+var AUTH_MISSING_TOKEN = "AUTH_MISSING_TOKEN";
+var AUTH_INVALID_TOKEN = "AUTH_INVALID_TOKEN";
+
 // server/_core/cookies.ts
 function isSecureRequest(req) {
   if (req.protocol === "https") return true;
@@ -38,11 +43,6 @@ function getSessionCookieOptions(req) {
 
 // server/_core/trpc.ts
 import { initTRPC, TRPCError } from "@trpc/server";
-
-// shared/authErrors.ts
-var USER_NOT_PROVISIONED = "USER_NOT_PROVISIONED";
-
-// server/_core/trpc.ts
 import superjson from "superjson";
 var t = initTRPC.context().create({
   transformer: superjson
@@ -1684,7 +1684,25 @@ var dashboardRouter = router({
 });
 var appRouter = router({
   auth: router({
-    me: protectedProcedure.query((opts) => opts.ctx.user),
+    me: publicProcedure.query(({ ctx }) => {
+      if (ctx.user) return ctx.user;
+      if (!ctx.auth.hasAuthorizationHeader) {
+        throw new TRPCError3({
+          code: "UNAUTHORIZED",
+          message: AUTH_MISSING_TOKEN
+        });
+      }
+      if (ctx.auth.error?.code === USER_NOT_PROVISIONED) {
+        throw new TRPCError3({
+          code: "FORBIDDEN",
+          message: USER_NOT_PROVISIONED
+        });
+      }
+      throw new TRPCError3({
+        code: "UNAUTHORIZED",
+        message: ctx.auth.error?.message || AUTH_INVALID_TOKEN
+      });
+    }),
     bootstrap: publicProcedure.mutation(
       ({ ctx }) => runAuthOperation(() => sdk.bootstrapRequest(ctx.req))
     ),

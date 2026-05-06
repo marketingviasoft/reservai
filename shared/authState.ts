@@ -38,3 +38,21 @@ export function shouldBootstrapAuth(input: {
   if (input.bootstrapAttempted || input.isBootstrapPending) return false;
   return isUserNotProvisionedError(input.authError);
 }
+
+export function shouldRunAuthMeQuery(input: {
+  hasSupabaseClient: boolean;
+  sessionChecked: boolean;
+  hasSupabaseSession: boolean;
+  isBootstrapPending: boolean;
+}) {
+  if (!input.hasSupabaseClient) return true;
+  return (
+    input.sessionChecked &&
+    input.hasSupabaseSession &&
+    !input.isBootstrapPending
+  );
+}
+
+export function shouldRefreshAuthMeForSupabaseEvent(event: string) {
+  return event === "SIGNED_OUT";
+}

@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-05-06 - Correcao da corrida entre auth.bootstrap e auth.me
+
+Resumo:
+
+- Corrigida a ordem do login para impedir que `auth.me` rode enquanto `auth.bootstrap` ainda esta pendente.
+- O listener global do Supabase deixou de invalidar/refazer `auth.me` em `SIGNED_IN` e `TOKEN_REFRESHED`.
+- Criada uma trava de bootstrap no frontend para bloquear `auth.me` durante o login/bootstrap e liberar somente apos conclusao ou falha.
+- `auth.me` passou a retornar erros especificos: `AUTH_MISSING_TOKEN` para ausencia de bearer token e `USER_NOT_PROVISIONED` para token valido sem usuario interno.
+
+Causa confirmada:
+
+- Apos `signInWithPassword`, o evento `SIGNED_IN` do Supabase podia habilitar/invalidate `auth.me` antes de `auth.bootstrap` criar/sincronizar o usuario interno.
+- Essa corrida fazia `auth.me` responder como usuario nao autenticado e a UI mostrava `Nao foi possivel validar sua sessao`.
+
+Impacto tecnico:
+
+- Nenhum schema, migration, reserva, auditoria, categoria, equipamento ou check-in/check-out foi alterado.
+- `auth.bootstrap` continua sendo a unica rota de criacao/sincronizacao inicial de usuario.
+- `auth.me` continua sendo somente leitura e nao executa `upsertUser`.
+
+Validacoes:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou com 3 arquivos e 95 testes.
+- `corepack pnpm build`: passou fora do sandbox apos `spawn EPERM`; manteve apenas o alerta conhecido de chunk frontend acima de 500 kB.
+
 ## 2026-05-06 - Refatoracao completa do fluxo de autenticacao
 
 Resumo:

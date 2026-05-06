@@ -1,4 +1,9 @@
 import { COOKIE_NAME } from "@shared/const";
+import {
+  AUTH_INVALID_TOKEN,
+  AUTH_MISSING_TOKEN,
+  USER_NOT_PROVISIONED,
+} from "@shared/authErrors";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
@@ -469,7 +474,25 @@ const dashboardRouter = router({
 // ─── App Router ──────────────────────────────────────────────────────────────
 export const appRouter = router({
   auth: router({
-    me: protectedProcedure.query((opts) => opts.ctx.user),
+    me: publicProcedure.query(({ ctx }) => {
+      if (ctx.user) return ctx.user;
+      if (!ctx.auth.hasAuthorizationHeader) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: AUTH_MISSING_TOKEN,
+        });
+      }
+      if (ctx.auth.error?.code === USER_NOT_PROVISIONED) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: USER_NOT_PROVISIONED,
+        });
+      }
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: ctx.auth.error?.message || AUTH_INVALID_TOKEN,
+      });
+    }),
     bootstrap: publicProcedure.mutation(({ ctx }) =>
       runAuthOperation(() => sdk.bootstrapRequest(ctx.req))
     ),

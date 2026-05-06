@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { trpc } from "@/lib/trpc";
+import { setAuthBootstrapInFlight } from "@/lib/authBootstrapGate";
 import { isCancelledError } from "@shared/authErrors";
 import { Loader2 } from "lucide-react";
 import { FormEvent, useState } from "react";
@@ -35,9 +36,14 @@ export function AuthForm() {
   };
 
   const bootstrapReservAiUser = async () => {
-    const user = await bootstrapMutation.mutateAsync();
-    utils.auth.me.setData(undefined, user);
-    await utils.auth.me.invalidate();
+    setAuthBootstrapInFlight(true);
+    try {
+      const user = await bootstrapMutation.mutateAsync();
+      utils.auth.me.setData(undefined, user);
+      await utils.auth.me.invalidate();
+    } finally {
+      setAuthBootstrapInFlight(false);
+    }
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -45,6 +51,7 @@ export function AuthForm() {
     if (!supabase) return;
 
     setLoading(true);
+    setAuthBootstrapInFlight(true);
     try {
       if (mode === "signin") {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -81,6 +88,7 @@ export function AuthForm() {
         error instanceof Error ? error.message : "Não foi possível autenticar";
       toast.error(message);
     } finally {
+      setAuthBootstrapInFlight(false);
       setLoading(false);
     }
   };

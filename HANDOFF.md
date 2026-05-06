@@ -1,6 +1,6 @@
 # HANDOFF - ReservAI
 
-_Ultima atualizacao: 2026-04-29_
+_Ultima atualizacao: 2026-05-06_
 
 ## 1. Visao Geral do Projeto
 
@@ -42,11 +42,11 @@ Comandos validados:
 
 Nenhuma migracao de banco ou alteracao de regra de negocio foi feita neste baseline.
 
-### Validacao recente de 2026-04-29
+### Validacao recente de 2026-05-06
 
 - `corepack pnpm check`: passou.
-- `corepack pnpm test`: passou com 2 arquivos e 78 testes.
-- `corepack pnpm build`: passou localmente.
+- `corepack pnpm test`: passou com 3 arquivos e 95 testes.
+- `corepack pnpm build`: passou fora do sandbox apos `spawn EPERM`.
 - O alerta de chunk frontend acima de 500 kB permanece conhecido e nao bloqueante.
 
 ### Validacao funcional no ambiente publicado
@@ -91,7 +91,7 @@ O layout principal esta pronto, com sidebar, branding ReservAI, protecao basica 
 
 Rotas tRPC existentes:
 
-- `auth`: `me`, `session`, `diagnostics`, `logout`
+- `auth`: `me`, `bootstrap`, `diagnostics`, `logout`
 - `category`: CRUD
 - `item`: CRUD, listagem, detalhe e upload de foto
 - `kit`: CRUD e vinculacao de itens
@@ -105,11 +105,13 @@ O backend ja possui:
 - autenticacao via Supabase Auth;
 - login via Supabase confirma sessao/token antes de chamar `auth.bootstrap` e atualizar `auth.me`;
 - `auth.me` valida token Supabase e busca usuario interno por `openId`, sem criar/sincronizar usuario;
+- `auth.me` retorna erros especificos: `AUTH_MISSING_TOKEN` quando falta bearer token e `USER_NOT_PROVISIONED` quando o token e valido, mas o usuario interno ainda nao existe;
 - `auth.bootstrap` valida token Supabase e cria/sincroniza usuario interno somente quando necessario;
+- o frontend bloqueia `auth.me` enquanto `auth.bootstrap` esta pendente, evitando corrida no login;
 - `upsertUser` fica fora da navegacao normal e restrito ao bootstrap inicial, com deduplicacao basica por `openId`;
 - `USER_NOT_PROVISIONED` diferencia token valido sem usuario interno de usuario anonimo ou token invalido;
 - `auth.diagnostics` expõe apenas flags/host nao sensiveis de ambiente;
-- o listener de mudanca de sessao invalida apenas `auth.me`, evitando cancelamento amplo de queries durante login/logout;
+- o listener global de mudanca de sessao nao refaz `auth.me` em `SIGNED_IN`/`TOKEN_REFRESHED`; em `SIGNED_OUT`, limpa o cache de auth;
 - RBAC basico com `adminProcedure` e `protectedProcedure`;
 - persistencia em Postgres/Supabase via Drizzle ORM;
 - upload de imagens para storage via URL pre-assinada.

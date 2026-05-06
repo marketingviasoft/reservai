@@ -1,8 +1,18 @@
 import { getLoginUrl } from "@/const";
+import {
+  isAuthBootstrapInFlight,
+  setAuthBootstrapInFlight,
+  subscribeAuthBootstrapInFlight,
+} from "@/lib/authBootstrapGate";
 import { supabase } from "@/lib/supabase";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
-import { getAuthStatus, shouldBootstrapAuth } from "@shared/authState";
+import {
+  getAuthStatus,
+  shouldBootstrapAuth,
+  shouldRefreshAuthMeForSupabaseEvent,
+  shouldRunAuthMeQuery,
+} from "@shared/authState";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type UseAuthOptions = {
@@ -18,7 +28,15 @@ export function useAuth(options?: UseAuthOptions) {
   const [sessionChecked, setSessionChecked] = useState(!supabase);
   const [hasSupabaseSession, setHasSupabaseSession] = useState(!supabase);
   const [bootstrapError, setBootstrapError] = useState<Error | null>(null);
+  const [externalBootstrapPending, setExternalBootstrapPending] = useState(
+    isAuthBootstrapInFlight()
+  );
   const bootstrapAttemptedRef = useRef(false);
+
+  useEffect(
+    () => subscribeAuthBootstrapInFlight(setExternalBootstrapPending),
+    []
+  );
 
   useEffect(() => {
     if (!supabase) return;
@@ -32,13 +50,19 @@ export function useAuth(options?: UseAuthOptions) {
       if (!hasSession) bootstrapAttemptedRef.current = false;
     });
 
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
       const hasSession = Boolean(session?.access_token);
       setHasSupabaseSession(hasSession);
       setSessionChecked(true);
-      bootstrapAttemptedRef.current = false;
-      setBootstrapError(null);
-      void utils.auth.me.invalidate();
+      if (event === "SIGNED_OUT") {
+        bootstrapAttemptedRef.current = false;
+        setBootstrapError(null);
+        setAuthBootstrapInFlight(false);
+        utils.auth.me.setData(undefined, undefined);
+      }
+      if (shouldRefreshAuthMeForSupabaseEvent(event)) {
+        void utils.auth.me.invalidate();
+      }
     });
 
     return () => {
@@ -48,7 +72,12 @@ export function useAuth(options?: UseAuthOptions) {
   }, [utils]);
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
-    enabled: !supabase || (sessionChecked && hasSupabaseSession),
+    enabled: shouldRunAuthMeQuery({
+      hasSupabaseClient: Boolean(supabase),
+      sessionChecked,
+      hasSupabaseSession,
+      isBootstrapPending: externalBootstrapPending,
+    }),
     retry: false,
     refetchOnWindowFocus: false,
   });
@@ -70,7 +99,7 @@ export function useAuth(options?: UseAuthOptions) {
         hasSupabaseSession,
         authError: meQuery.error,
         bootstrapAttempted: bootstrapAttemptedRef.current,
-        isBootstrapPending: bootstrapMutation.isPending,
+        isBootstrapPending: bootstrapMutation.isPending || externalBootstrapPending,
       })
     ) {
       return;
@@ -78,13 +107,18 @@ export function useAuth(options?: UseAuthOptions) {
 
     bootstrapAttemptedRef.current = true;
     setBootstrapError(null);
+    setAuthBootstrapInFlight(true);
     bootstrapMutation.mutate(undefined, {
       onSuccess: () => {
         void utils.auth.me.invalidate();
       },
+      onSettled: () => {
+        setAuthBootstrapInFlight(false);
+      },
     });
   }, [
     bootstrapMutation,
+    externalBootstrapPending,
     hasSupabaseSession,
     meQuery.error,
     sessionChecked,
@@ -112,6 +146,7 @@ export function useAuth(options?: UseAuthOptions) {
     } finally {
       bootstrapAttemptedRef.current = false;
       setBootstrapError(null);
+      setAuthBootstrapInFlight(false);
       setHasSupabaseSession(false);
       setSessionChecked(true);
       clearAuthCache();
@@ -136,7 +171,7 @@ export function useAuth(options?: UseAuthOptions) {
       hasUser: Boolean(user),
       hasError: Boolean(error),
       isAuthQueryLoading,
-      isBootstrapPending: bootstrapMutation.isPending,
+      isBootstrapPending: bootstrapMutation.isPending || externalBootstrapPending,
       isLogoutPending: logoutMutation.isPending,
     });
 
@@ -153,6 +188,7 @@ export function useAuth(options?: UseAuthOptions) {
   }, [
     bootstrapError,
     bootstrapMutation.isPending,
+    externalBootstrapPending,
     hasSupabaseSession,
     logoutMutation.error,
     logoutMutation.isPending,

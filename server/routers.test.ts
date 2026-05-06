@@ -21,6 +21,7 @@ import {
 } from "./reservationSelection";
 import { isReservationBlockingAvailability } from "../shared/reservationStatus";
 import {
+  AUTH_MISSING_TOKEN,
   USER_NOT_PROVISIONED,
   isCancelledError,
   isUserUpsertTimeoutError,
@@ -29,7 +30,12 @@ import {
   buildAuthDiagnostics,
   buildFrontendAuthDiagnostics,
 } from "../shared/authDiagnostics";
-import { getAuthStatus, shouldBootstrapAuth } from "../shared/authState";
+import {
+  getAuthStatus,
+  shouldBootstrapAuth,
+  shouldRefreshAuthMeForSupabaseEvent,
+  shouldRunAuthMeQuery,
+} from "../shared/authState";
 import {
   buildReservationEventDescription,
   hasReservationEvents,
@@ -127,11 +133,12 @@ async function expectNotPermissionError(operation: () => Promise<unknown>) {
 }
 
 describe("auth.me", () => {
-  it("rejects unauthenticated users with UNAUTHORIZED", async () => {
+  it("rejects unauthenticated users with AUTH_MISSING_TOKEN", async () => {
     const ctx = createContext(null);
     const caller = appRouter.createCaller(ctx);
     await expect(caller.auth.me()).rejects.toMatchObject({
       code: "UNAUTHORIZED",
+      message: AUTH_MISSING_TOKEN,
     });
   });
 
@@ -271,6 +278,31 @@ describe("auth client error helpers", () => {
     ).toBe("error");
   });
 
+  it("does not run auth.me while bootstrap is pending", () => {
+    expect(
+      shouldRunAuthMeQuery({
+        hasSupabaseClient: true,
+        sessionChecked: true,
+        hasSupabaseSession: true,
+        isBootstrapPending: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldRunAuthMeQuery({
+        hasSupabaseClient: true,
+        sessionChecked: true,
+        hasSupabaseSession: true,
+        isBootstrapPending: false,
+      })
+    ).toBe(true);
+  });
+
+  it("does not refresh auth.me from Supabase SIGNED_IN or TOKEN_REFRESHED events", () => {
+    expect(shouldRefreshAuthMeForSupabaseEvent("SIGNED_IN")).toBe(false);
+    expect(shouldRefreshAuthMeForSupabaseEvent("TOKEN_REFRESHED")).toBe(false);
+    expect(shouldRefreshAuthMeForSupabaseEvent("SIGNED_OUT")).toBe(true);
+  });
+
   it("bootstraps exactly when auth.me reports USER_NOT_PROVISIONED", () => {
     expect(
       shouldBootstrapAuth({
@@ -297,6 +329,15 @@ describe("auth client error helpers", () => {
         authError: new Error("Invalid login credentials"),
         bootstrapAttempted: false,
         isBootstrapPending: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldBootstrapAuth({
+        sessionChecked: true,
+        hasSupabaseSession: true,
+        authError: new Error(USER_NOT_PROVISIONED),
+        bootstrapAttempted: false,
+        isBootstrapPending: true,
       })
     ).toBe(false);
   });

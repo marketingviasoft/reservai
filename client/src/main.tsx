@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpLink } from "@trpc/client";
 import { getQueryKey } from "@trpc/react-query";
 import { isCancelledError } from "@shared/authErrors";
+import { shouldRefreshAuthMeForSupabaseEvent } from "@shared/authState";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
@@ -49,11 +50,9 @@ const trpcClient = trpc.createClient({
   ],
 });
 
-supabase?.auth.onAuthStateChange(() => {
-  void queryClient.invalidateQueries(
-    { queryKey: authMeQueryKey, refetchType: "active" },
-    { cancelRefetch: false }
-  );
+supabase?.auth.onAuthStateChange((event) => {
+  if (!shouldRefreshAuthMeForSupabaseEvent(event)) return;
+  queryClient.removeQueries({ queryKey: authMeQueryKey });
 });
 
 createRoot(document.getElementById("root")!).render(
