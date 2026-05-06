@@ -3,6 +3,11 @@ export type AuthEnvironmentInput = {
   supabaseUrl?: string | null;
   supabaseAnonKey?: string | null;
   nodeEnv?: string | null;
+  dbPing?: {
+    ok: boolean;
+    elapsedMs: number;
+    errorCode?: string;
+  } | null;
 };
 
 export type FrontendAuthEnvironmentInput = {
@@ -19,13 +24,24 @@ function getHostFromUrl(value?: string | null) {
   }
 }
 
+export function databaseLooksLikeSupabasePooler(databaseUrl?: string | null) {
+  const host = getHostFromUrl(databaseUrl);
+  if (!host) return false;
+  return host.includes("pooler.supabase.com");
+}
+
 export function buildAuthDiagnostics(input: AuthEnvironmentInput) {
   return {
     hasDatabaseUrl: Boolean(input.databaseUrl),
+    databaseHost: getHostFromUrl(input.databaseUrl),
+    databaseLooksLikeSupabasePooler: databaseLooksLikeSupabasePooler(
+      input.databaseUrl
+    ),
     hasSupabaseUrl: Boolean(input.supabaseUrl),
     hasSupabaseAnonKey: Boolean(input.supabaseAnonKey),
     supabaseHost: getHostFromUrl(input.supabaseUrl),
     nodeEnv: input.nodeEnv ?? "",
+    dbPing: input.dbPing ?? null,
   };
 }
 

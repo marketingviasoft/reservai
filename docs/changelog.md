@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-05-06 - Instrumentacao e reducao de latencia pos-login
+
+Resumo:
+
+- Adicionados logs seguros de performance para procedures tRPC, com path, status e duracao.
+- Adicionados logs seguros de banco para consultas criticas: `getUserByOpenId`, `listItems`, `listCategories`, `listReservations`, `getDashboardStats`, `getRecentReservations` e `getOverdueReservations`.
+- `auth.diagnostics` passou a incluir `pingDb` seguro, `databaseHost` e indicador `databaseLooksLikeSupabasePooler`, sem expor secrets ou connection strings completas.
+- O client tRPC passou de `httpLink` para `httpBatchLink` para reduzir requests simultaneas no carregamento inicial.
+- O React Query recebeu defaults moderados: `staleTime` de 30s, `refetchOnWindowFocus: false` e `retry: 1`.
+- Logout/SIGNED_OUT agora limpa o cache do React Query, reduzindo chance de erro antigo ficar preso entre logout e novo login.
+- `getDashboardStats` consolidou as contagens de reservas em uma consulta agregada, reduzindo a quantidade de queries do Dashboard sem alterar metricas.
+
+Diagnostico:
+
+- A correcao anterior da `DATABASE_URL` para Supabase Transaction Pooler estabilizou auth, mas ainda faltava visibilidade para separar cold start, conexao inicial, queries lentas e excesso de requests.
+- A instrumentacao criada permite comparar duracoes de `auth.me`, `auth.bootstrap`, Dashboard, listas e consultas DB diretamente nos logs do runtime.
+
+Recomendacoes:
+
+- Manter `DATABASE_URL` de producao no **Supabase Transaction Pooler** em Vercel/serverless.
+- Usar os logs `[TRPC]` e `[DB]` em producao para identificar se a lentidao vem de cold start/conexao ou de query especifica.
+- Se os logs apontarem gargalo persistente em filtros por status, categoria ou periodo, avaliar indices em uma etapa separada e com migration revisada.
+
+Validacoes:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou com 3 arquivos e 99 testes.
+- `corepack pnpm build`: falhou no sandbox com `spawn EPERM`; a tentativa fora do sandbox foi bloqueada pelo revisor automatico por limite de uso nesta rodada.
+
 ## 2026-05-06 - Correcao de autenticacao em producao com Supabase Transaction Pooler
 
 Resumo:

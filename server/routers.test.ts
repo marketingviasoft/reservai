@@ -7,6 +7,7 @@ import {
   buildReservationEvent,
   buildReservationUpdateMetadata,
   collectReservationPhysicalItemIds,
+  pingDb,
 } from "./db";
 import {
   assertAdminReservationOperator,
@@ -28,8 +29,14 @@ import {
 } from "../shared/authErrors";
 import {
   buildAuthDiagnostics,
+  databaseLooksLikeSupabasePooler,
   buildFrontendAuthDiagnostics,
 } from "../shared/authDiagnostics";
+import {
+  buildPerformanceLog,
+  getSafeErrorCode,
+  shouldLogPerformance,
+} from "./performance";
 import {
   getAuthStatus,
   shouldBootstrapAuth,
@@ -344,10 +351,11 @@ describe("auth client error helpers", () => {
 
   it("builds auth diagnostics without exposing secrets", () => {
     const diagnostics = buildAuthDiagnostics({
-      databaseUrl: "postgres://user:pass@example.com/db",
+      databaseUrl: "postgres://user:pass@aws-0-sa-east-1.pooler.supabase.com:6543/db",
       supabaseUrl: "https://example.supabase.co",
       supabaseAnonKey: "anon-secret-value",
       nodeEnv: "production",
+      dbPing: { ok: true, elapsedMs: 12 },
     });
     const frontendDiagnostics = buildFrontendAuthDiagnostics({
       viteSupabaseUrl: "https://front.supabase.co",
@@ -356,18 +364,72 @@ describe("auth client error helpers", () => {
 
     expect(diagnostics).toEqual({
       hasDatabaseUrl: true,
+      databaseHost: "aws-0-sa-east-1.pooler.supabase.com:6543",
+      databaseLooksLikeSupabasePooler: true,
       hasSupabaseUrl: true,
       hasSupabaseAnonKey: true,
       supabaseHost: "example.supabase.co",
       nodeEnv: "production",
+      dbPing: { ok: true, elapsedMs: 12 },
     });
     expect(JSON.stringify(diagnostics)).not.toContain("anon-secret-value");
+    expect(JSON.stringify(diagnostics)).not.toContain("user:pass");
     expect(frontendDiagnostics).toEqual({
       hasViteSupabaseUrl: true,
       hasViteSupabaseAnonKey: true,
       viteSupabaseHost: "front.supabase.co",
     });
     expect(JSON.stringify(frontendDiagnostics)).not.toContain("vite-anon-secret");
+  });
+
+  it("identifies Supabase pooler hosts without exposing the full DATABASE_URL", () => {
+    expect(
+      databaseLooksLikeSupabasePooler(
+        "postgres://user:secret@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+      )
+    ).toBe(true);
+    expect(
+      databaseLooksLikeSupabasePooler(
+        "postgres://user:secret@db.project-ref.supabase.co:5432/postgres"
+      )
+    ).toBe(false);
+  });
+
+  it("returns a safe pingDb diagnostic shape", async () => {
+    const result = await pingDb(async () => undefined);
+
+    expect(typeof result.ok).toBe("boolean");
+    expect(typeof result.elapsedMs).toBe("number");
+    expect(JSON.stringify(result)).not.toContain("postgres://");
+    expect(JSON.stringify(result)).not.toContain("DATABASE_URL");
+  });
+
+  it("returns a safe pingDb failure shape", async () => {
+    const result = await pingDb(async () => {
+      throw Object.assign(new Error("password=secret"), { code: "ECONNRESET" });
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errorCode).toBe("ECONNRESET");
+    expect(JSON.stringify(result)).not.toContain("password=secret");
+  });
+
+  it("builds performance logs without tokens or secrets", () => {
+    const message = buildPerformanceLog({
+      prefix: "TRPC",
+      name: "dashboard.stats",
+      status: "error",
+      elapsedMs: 420,
+      error: { code: "DB_TIMEOUT", token: "secret-token" },
+      rows: 0,
+    });
+
+    expect(message).toBe("[TRPC] dashboard.stats error 420ms rows=0 DB_TIMEOUT");
+    expect(message).not.toContain("secret-token");
+    expect(getSafeErrorCode(new Error("contains password"))).toBe("Error");
+    expect(shouldLogPerformance({ NODE_ENV: "production" })).toBe(true);
+    expect(shouldLogPerformance({ RESERVAI_PERF_LOGS: "true" })).toBe(true);
+    expect(shouldLogPerformance({ NODE_ENV: "test" })).toBe(false);
   });
 });
 

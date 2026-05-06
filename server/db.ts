@@ -23,6 +23,7 @@ import { nanoid } from "nanoid";
 import { uniqueNumbers } from "../shared/reservationSelection";
 import { RESERVATION_BLOCKING_STATUSES } from "../shared/reservationStatus";
 import { buildDashboardStatsFromCounts, emptyDashboardStats } from "../shared/operationalViews";
+import { getSafeErrorCode, measurePerformance } from "./performance";
 
 // Generate unique equipment code: EQP-XXXXX (uppercase alphanumeric)
 function generateItemCode(): string {
@@ -59,6 +60,40 @@ export async function getDb() {
     }
   }
   return _db;
+}
+
+export async function pingDb(
+  executePing?: () => Promise<unknown>
+) {
+  const start = Date.now();
+  try {
+    if (executePing) {
+      await executePing();
+      return {
+        ok: true,
+        elapsedMs: Date.now() - start,
+      };
+    }
+    const db = await getDb();
+    if (!db || !_client) {
+      return {
+        ok: false,
+        elapsedMs: Date.now() - start,
+        errorCode: "DB_NOT_AVAILABLE",
+      };
+    }
+    await _client`select 1`;
+    return {
+      ok: true,
+      elapsedMs: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      elapsedMs: Date.now() - start,
+      errorCode: getSafeErrorCode(error),
+    };
+  }
 }
 
 // ─── Users (Colaboradores) ──────────────────────────────────────────────────
@@ -109,10 +144,12 @@ export async function countUsers() {
 }
 
 export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) return undefined;
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  return measurePerformance("DB", "getUserByOpenId", async () => {
+    const db = await getDb();
+    if (!db) return undefined;
+    const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+    return result.length > 0 ? result[0] : undefined;
+  }, (result) => (result ? 1 : 0));
 }
 
 export async function listUsers(search?: string) {
@@ -156,9 +193,11 @@ export async function updateUserRole(id: number, role: "user" | "admin") {
 
 // ─── Categories ──────────────────────────────────────────────────────────────
 export async function listCategories() {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(categories).orderBy(asc(categories.name));
+  return measurePerformance("DB", "listCategories", async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(categories).orderBy(asc(categories.name));
+  }, (rows) => rows.length);
 }
 
 export async function createCategory(data: InsertCategory) {
@@ -182,48 +221,50 @@ export async function deleteCategory(id: number) {
 
 // ─── Items ───────────────────────────────────────────────────────────────────
 export async function listItems(filters?: { categoryId?: number; status?: string; search?: string }) {
-  const db = await getDb();
-  if (!db) return [];
-  const conditions = [];
-  if (filters?.categoryId) conditions.push(eq(items.categoryId, filters.categoryId));
-  if (filters?.status) conditions.push(eq(items.status, filters.status as any));
-  if (filters?.search) {
-    const term = `%${filters.search}%`;
-    conditions.push(or(
-      like(items.name, term),
-      like(items.code, term),
-      like(items.brand, term),
-      like(items.model, term),
-      like(items.assetNumber, term),
-      like(items.serialNumber, term)
-    ));
-  }
-  const rows = await db
-    .select({
-      id: items.id,
-      code: items.code,
-      name: items.name,
-      brand: items.brand,
-      model: items.model,
-      description: items.description,
-      categoryId: items.categoryId,
-      categoryName: categories.name,
-      categoryColor: categories.color,
-      serialNumber: items.serialNumber,
-      assetNumber: items.assetNumber,
-      photoUrl: items.photoUrl,
-      photoKey: items.photoKey,
-      status: items.status,
-      condition: items.condition,
-      notes: items.notes,
-      createdAt: items.createdAt,
-      updatedAt: items.updatedAt,
-    })
-    .from(items)
-    .leftJoin(categories, eq(items.categoryId, categories.id))
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(items.updatedAt));
-  return rows;
+  return measurePerformance("DB", "listItems", async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const conditions = [];
+    if (filters?.categoryId) conditions.push(eq(items.categoryId, filters.categoryId));
+    if (filters?.status) conditions.push(eq(items.status, filters.status as any));
+    if (filters?.search) {
+      const term = `%${filters.search}%`;
+      conditions.push(or(
+        like(items.name, term),
+        like(items.code, term),
+        like(items.brand, term),
+        like(items.model, term),
+        like(items.assetNumber, term),
+        like(items.serialNumber, term)
+      ));
+    }
+    const rows = await db
+      .select({
+        id: items.id,
+        code: items.code,
+        name: items.name,
+        brand: items.brand,
+        model: items.model,
+        description: items.description,
+        categoryId: items.categoryId,
+        categoryName: categories.name,
+        categoryColor: categories.color,
+        serialNumber: items.serialNumber,
+        assetNumber: items.assetNumber,
+        photoUrl: items.photoUrl,
+        photoKey: items.photoKey,
+        status: items.status,
+        condition: items.condition,
+        notes: items.notes,
+        createdAt: items.createdAt,
+        updatedAt: items.updatedAt,
+      })
+      .from(items)
+      .leftJoin(categories, eq(items.categoryId, categories.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(items.updatedAt));
+    return rows;
+  }, (rows) => rows.length);
 }
 
 export async function getItemById(id: number) {
@@ -391,60 +432,62 @@ export async function listReservations(filters?: {
   startDate?: number;
   endDate?: number;
 }) {
-  const db = await getDb();
-  if (!db) return [];
-  const conditions = [];
-  if (filters?.status) conditions.push(eq(reservations.status, filters.status as any));
-  if (filters?.userId) conditions.push(eq(reservations.userId, filters.userId));
-  if (filters?.startDate) conditions.push(gte(reservations.endDate, filters.startDate));
-  if (filters?.endDate) conditions.push(lte(reservations.startDate, filters.endDate));
+  return measurePerformance("DB", "listReservations", async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const conditions = [];
+    if (filters?.status) conditions.push(eq(reservations.status, filters.status as any));
+    if (filters?.userId) conditions.push(eq(reservations.userId, filters.userId));
+    if (filters?.startDate) conditions.push(gte(reservations.endDate, filters.startDate));
+    if (filters?.endDate) conditions.push(lte(reservations.startDate, filters.endDate));
 
-  const rows = await db
-    .select({
-      id: reservations.id,
-      userId: reservations.userId,
-      userName: users.name,
-      userEmail: users.email,
-      userDepartment: users.department,
-      startDate: reservations.startDate,
-      endDate: reservations.endDate,
-      status: reservations.status,
-      checkoutAt: reservations.checkoutAt,
-      checkoutByUserId: reservations.checkoutByUserId,
-      checkinAt: reservations.checkinAt,
-      checkinByUserId: reservations.checkinByUserId,
-      notes: reservations.notes,
-      createdAt: reservations.createdAt,
-      updatedAt: reservations.updatedAt,
-    })
-    .from(reservations)
-    .leftJoin(users, eq(reservations.userId, users.id))
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(reservations.startDate));
-
-  // Fetch reservation items for each reservation
-  const resIds = rows.map((r) => r.id);
-  let resItemsData: any[] = [];
-  if (resIds.length > 0) {
-    resItemsData = await db
+    const rows = await db
       .select({
-        reservationId: reservationItems.reservationId,
-        itemId: reservationItems.itemId,
-        kitId: reservationItems.kitId,
-        itemName: items.name,
-        itemCode: items.code,
-        kitName: kits.name,
+        id: reservations.id,
+        userId: reservations.userId,
+        userName: users.name,
+        userEmail: users.email,
+        userDepartment: users.department,
+        startDate: reservations.startDate,
+        endDate: reservations.endDate,
+        status: reservations.status,
+        checkoutAt: reservations.checkoutAt,
+        checkoutByUserId: reservations.checkoutByUserId,
+        checkinAt: reservations.checkinAt,
+        checkinByUserId: reservations.checkinByUserId,
+        notes: reservations.notes,
+        createdAt: reservations.createdAt,
+        updatedAt: reservations.updatedAt,
       })
-      .from(reservationItems)
-      .leftJoin(items, eq(reservationItems.itemId, items.id))
-      .leftJoin(kits, eq(reservationItems.kitId, kits.id))
-      .where(inArray(reservationItems.reservationId, resIds));
-  }
+      .from(reservations)
+      .leftJoin(users, eq(reservations.userId, users.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(reservations.startDate));
 
-  return rows.map((r) => ({
-    ...r,
-    reservationItems: resItemsData.filter((ri) => ri.reservationId === r.id),
-  }));
+    // Fetch reservation items for each reservation
+    const resIds = rows.map((r) => r.id);
+    let resItemsData: any[] = [];
+    if (resIds.length > 0) {
+      resItemsData = await db
+        .select({
+          reservationId: reservationItems.reservationId,
+          itemId: reservationItems.itemId,
+          kitId: reservationItems.kitId,
+          itemName: items.name,
+          itemCode: items.code,
+          kitName: kits.name,
+        })
+        .from(reservationItems)
+        .leftJoin(items, eq(reservationItems.itemId, items.id))
+        .leftJoin(kits, eq(reservationItems.kitId, kits.id))
+        .where(inArray(reservationItems.reservationId, resIds));
+    }
+
+    return rows.map((r) => ({
+      ...r,
+      reservationItems: resItemsData.filter((ri) => ri.reservationId === r.id),
+    }));
+  }, (rows) => rows.length);
 }
 
 export async function getReservationById(id: number) {
@@ -690,112 +733,102 @@ export async function checkKitConflicts(
 
 // ─── Dashboard Stats ─────────────────────────────────────────────────────────
 export async function getDashboardStats(userId?: number) {
-  const db = await getDb();
-  if (!db) return emptyDashboardStats();
+  return measurePerformance("DB", "getDashboardStats", async () => {
+    const db = await getDb();
+    if (!db) return emptyDashboardStats();
 
-  const now = Date.now();
-  const reservationScope = userId ? eq(reservations.userId, userId) : undefined;
-  const scopedReservationWhere = (...conditions: any[]) =>
-    reservationScope ? and(reservationScope, ...conditions) : and(...conditions);
+    const now = Date.now();
+    const reservationScope = userId ? eq(reservations.userId, userId) : undefined;
 
-  const [
-    [itemStats],
-    [kitStats],
-    [userStats],
-    [activeRes],
-    [pendingRes],
-    [completedRes],
-    [canceledRes],
-    [overdueRes],
-  ] = await Promise.all([
-    db
-      .select({
-        total: count(),
-        available: sql<number>`SUM(CASE WHEN ${items.status} = 'disponivel' THEN 1 ELSE 0 END)`,
-        lent: sql<number>`SUM(CASE WHEN ${items.status} = 'emprestado' THEN 1 ELSE 0 END)`,
-        maintenance: sql<number>`SUM(CASE WHEN ${items.status} = 'manutencao' THEN 1 ELSE 0 END)`,
-        lost: sql<number>`SUM(CASE WHEN ${items.status} = 'extraviado' THEN 1 ELSE 0 END)`,
-      })
-      .from(items),
-    db.select({ total: count() }).from(kits),
-    db.select({ total: count() }).from(users),
-    db
-      .select({ total: count() })
-      .from(reservations)
-      .where(scopedReservationWhere(eq(reservations.status, "ativa"))),
-    db
-      .select({ total: count() })
-      .from(reservations)
-      .where(scopedReservationWhere(eq(reservations.status, "pendente"))),
-    db
-      .select({ total: count() })
-      .from(reservations)
-      .where(scopedReservationWhere(eq(reservations.status, "concluida"))),
-    db
-      .select({ total: count() })
-      .from(reservations)
-      .where(scopedReservationWhere(eq(reservations.status, "cancelada"))),
-    db
-      .select({ total: count() })
-      .from(reservations)
-      .where(scopedReservationWhere(eq(reservations.status, "ativa"), lte(reservations.endDate, now))),
-  ]);
+    const [
+      [itemStats],
+      [kitStats],
+      [userStats],
+      [reservationStats],
+    ] = await Promise.all([
+      db
+        .select({
+          total: count(),
+          available: sql<number>`SUM(CASE WHEN ${items.status} = 'disponivel' THEN 1 ELSE 0 END)`,
+          lent: sql<number>`SUM(CASE WHEN ${items.status} = 'emprestado' THEN 1 ELSE 0 END)`,
+          maintenance: sql<number>`SUM(CASE WHEN ${items.status} = 'manutencao' THEN 1 ELSE 0 END)`,
+          lost: sql<number>`SUM(CASE WHEN ${items.status} = 'extraviado' THEN 1 ELSE 0 END)`,
+        })
+        .from(items),
+      db.select({ total: count() }).from(kits),
+      db.select({ total: count() }).from(users),
+      db
+        .select({
+          active: sql<number>`SUM(CASE WHEN ${reservations.status} = 'ativa' THEN 1 ELSE 0 END)`,
+          pending: sql<number>`SUM(CASE WHEN ${reservations.status} = 'pendente' THEN 1 ELSE 0 END)`,
+          completed: sql<number>`SUM(CASE WHEN ${reservations.status} = 'concluida' THEN 1 ELSE 0 END)`,
+          canceled: sql<number>`SUM(CASE WHEN ${reservations.status} = 'cancelada' THEN 1 ELSE 0 END)`,
+          overdue: sql<number>`SUM(CASE WHEN ${reservations.status} = 'ativa' AND ${reservations.endDate} <= ${now} THEN 1 ELSE 0 END)`,
+        })
+        .from(reservations)
+        .where(reservationScope),
+    ]);
 
-  return buildDashboardStatsFromCounts({
-    totalItems: itemStats?.total ?? 0,
-    availableItems: Number(itemStats?.available ?? 0),
-    lentItems: Number(itemStats?.lent ?? 0),
-    maintenanceItems: Number(itemStats?.maintenance ?? 0),
-    lostItems: Number(itemStats?.lost ?? 0),
-    totalKits: kitStats?.total ?? 0,
-    totalUsers: userStats?.total ?? 0,
-    activeReservations: activeRes?.total ?? 0,
-    pendingReservations: pendingRes?.total ?? 0,
-    completedReservations: completedRes?.total ?? 0,
-    canceledReservations: canceledRes?.total ?? 0,
-    overdueReservations: overdueRes?.total ?? 0,
+    return buildDashboardStatsFromCounts({
+      totalItems: itemStats?.total ?? 0,
+      availableItems: Number(itemStats?.available ?? 0),
+      lentItems: Number(itemStats?.lent ?? 0),
+      maintenanceItems: Number(itemStats?.maintenance ?? 0),
+      lostItems: Number(itemStats?.lost ?? 0),
+      totalKits: kitStats?.total ?? 0,
+      totalUsers: userStats?.total ?? 0,
+      activeReservations: Number(reservationStats?.active ?? 0),
+      pendingReservations: Number(reservationStats?.pending ?? 0),
+      completedReservations: Number(reservationStats?.completed ?? 0),
+      canceledReservations: Number(reservationStats?.canceled ?? 0),
+      overdueReservations: Number(reservationStats?.overdue ?? 0),
+    });
   });
 }
 
 export async function getRecentReservations(limit = 10, userId?: number) {
-  const db = await getDb();
-  if (!db) return [];
-  return db
-    .select({
-      id: reservations.id,
-      userName: users.name,
-      userDepartment: users.department,
-      startDate: reservations.startDate,
-      endDate: reservations.endDate,
-      status: reservations.status,
-      notes: reservations.notes,
-    })
-    .from(reservations)
-    .leftJoin(users, eq(reservations.userId, users.id))
-    .where(userId ? eq(reservations.userId, userId) : undefined)
-    .orderBy(desc(reservations.createdAt))
-    .limit(limit);
+  return measurePerformance("DB", "getRecentReservations", async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db
+      .select({
+        id: reservations.id,
+        userName: users.name,
+        userDepartment: users.department,
+        startDate: reservations.startDate,
+        endDate: reservations.endDate,
+        status: reservations.status,
+        notes: reservations.notes,
+      })
+      .from(reservations)
+      .leftJoin(users, eq(reservations.userId, users.id))
+      .where(userId ? eq(reservations.userId, userId) : undefined)
+      .orderBy(desc(reservations.createdAt))
+      .limit(limit);
+  }, (rows) => rows.length);
 }
 
 export async function getOverdueReservations(userId?: number) {
-  const db = await getDb();
-  if (!db) return [];
-  const now = Date.now();
-  const conditions = [eq(reservations.status, "ativa"), lte(reservations.endDate, now)];
-  if (userId) conditions.push(eq(reservations.userId, userId));
-  return db
-    .select({
-      id: reservations.id,
-      userName: users.name,
-      userDepartment: users.department,
-      startDate: reservations.startDate,
-      endDate: reservations.endDate,
-      status: reservations.status,
-    })
-    .from(reservations)
-    .leftJoin(users, eq(reservations.userId, users.id))
-    .where(and(...conditions))
-    .orderBy(asc(reservations.endDate));
+  return measurePerformance("DB", "getOverdueReservations", async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const now = Date.now();
+    const conditions = [eq(reservations.status, "ativa"), lte(reservations.endDate, now)];
+    if (userId) conditions.push(eq(reservations.userId, userId));
+    return db
+      .select({
+        id: reservations.id,
+        userName: users.name,
+        userDepartment: users.department,
+        startDate: reservations.startDate,
+        endDate: reservations.endDate,
+        status: reservations.status,
+      })
+      .from(reservations)
+      .leftJoin(users, eq(reservations.userId, users.id))
+      .where(and(...conditions))
+      .orderBy(asc(reservations.endDate));
+  }, (rows) => rows.length);
 }
 
 // ─── Get items belonging to kits (for blocking) ─────────────────────────────

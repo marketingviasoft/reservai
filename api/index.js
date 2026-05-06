@@ -44,11 +44,90 @@ function getSessionCookieOptions(req) {
 // server/_core/trpc.ts
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
+
+// server/performance.ts
+function shouldLogPerformance(env = process.env) {
+  return env.NODE_ENV === "production" || env.RESERVAI_PERF_LOGS === "true";
+}
+function getSafeErrorCode(error) {
+  if (typeof error === "object" && error !== null) {
+    const maybeCode = error.code;
+    if (typeof maybeCode === "string" && maybeCode.length > 0) {
+      return maybeCode;
+    }
+    const maybeName = error.name;
+    if (typeof maybeName === "string" && maybeName.length > 0) {
+      return maybeName;
+    }
+  }
+  return "ERROR";
+}
+function buildPerformanceLog(input) {
+  const parts = [
+    `[${input.prefix}]`,
+    input.name,
+    input.status,
+    `${input.elapsedMs}ms`
+  ];
+  if (typeof input.rows === "number") {
+    parts.push(`rows=${input.rows}`);
+  }
+  if (input.status === "error") {
+    parts.push(getSafeErrorCode(input.error));
+  }
+  return parts.join(" ");
+}
+function logPerformance(input) {
+  if (!shouldLogPerformance()) return;
+  const message = buildPerformanceLog(input);
+  if (input.status === "error") {
+    console.error(message);
+  } else {
+    console.log(message);
+  }
+}
+async function measurePerformance(prefix, name, operation, getRows) {
+  const start = Date.now();
+  try {
+    const result = await operation();
+    logPerformance({
+      prefix,
+      name,
+      status: "ok",
+      elapsedMs: Date.now() - start,
+      rows: getRows?.(result)
+    });
+    return result;
+  } catch (error) {
+    logPerformance({
+      prefix,
+      name,
+      status: "error",
+      elapsedMs: Date.now() - start,
+      error
+    });
+    throw error;
+  }
+}
+
+// server/_core/trpc.ts
 var t = initTRPC.context().create({
   transformer: superjson
 });
 var router = t.router;
-var publicProcedure = t.procedure;
+var logProcedurePerformance = t.middleware(async (opts) => {
+  const start = Date.now();
+  const result = await opts.next();
+  logPerformance({
+    prefix: "TRPC",
+    name: opts.path,
+    status: result.ok ? "ok" : "error",
+    elapsedMs: Date.now() - start,
+    error: result.ok ? void 0 : result.error
+  });
+  return result;
+});
+var publicProcedure = t.procedure.use(logProcedurePerformance);
 var requireUser = t.middleware(async (opts) => {
   const { ctx, next } = opts;
   if (!ctx.user) {
@@ -67,8 +146,8 @@ var requireUser = t.middleware(async (opts) => {
     }
   });
 });
-var protectedProcedure = t.procedure.use(requireUser);
-var adminProcedure = t.procedure.use(
+var protectedProcedure = publicProcedure.use(requireUser);
+var adminProcedure = publicProcedure.use(
   t.middleware(async (opts) => {
     const { ctx, next } = opts;
     if (!ctx.user || ctx.user.role !== "admin") {
@@ -125,6 +204,7 @@ __export(db_exports, {
   listReservationEvents: () => listReservationEvents,
   listReservations: () => listReservations,
   listUsers: () => listUsers,
+  pingDb: () => pingDb,
   recalculateKitStatus: () => recalculateKitStatus,
   removeItemFromKit: () => removeItemFromKit,
   setKitItems: () => setKitItems,
@@ -439,6 +519,37 @@ async function getDb() {
   }
   return _db;
 }
+async function pingDb(executePing) {
+  const start = Date.now();
+  try {
+    if (executePing) {
+      await executePing();
+      return {
+        ok: true,
+        elapsedMs: Date.now() - start
+      };
+    }
+    const db = await getDb();
+    if (!db || !_client) {
+      return {
+        ok: false,
+        elapsedMs: Date.now() - start,
+        errorCode: "DB_NOT_AVAILABLE"
+      };
+    }
+    await _client`select 1`;
+    return {
+      ok: true,
+      elapsedMs: Date.now() - start
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      elapsedMs: Date.now() - start,
+      errorCode: getSafeErrorCode(error)
+    };
+  }
+}
 async function upsertUser(user) {
   if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
@@ -488,10 +599,12 @@ async function countUsers() {
   return Number(row?.total ?? 0);
 }
 async function getUserByOpenId(openId) {
-  const db = await getDb();
-  if (!db) return void 0;
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-  return result.length > 0 ? result[0] : void 0;
+  return measurePerformance("DB", "getUserByOpenId", async () => {
+    const db = await getDb();
+    if (!db) return void 0;
+    const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+    return result.length > 0 ? result[0] : void 0;
+  }, (result) => result ? 1 : 0);
 }
 async function listUsers(search) {
   const db = await getDb();
@@ -525,9 +638,11 @@ async function updateUserRole(id, role) {
   await db.update(users).set(touchUpdatedAt({ role })).where(eq(users.id, id));
 }
 async function listCategories() {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(categories).orderBy(asc(categories.name));
+  return measurePerformance("DB", "listCategories", async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(categories).orderBy(asc(categories.name));
+  }, (rows) => rows.length);
 }
 async function createCategory(data) {
   const db = await getDb();
@@ -546,43 +661,45 @@ async function deleteCategory(id) {
   await db.delete(categories).where(eq(categories.id, id));
 }
 async function listItems(filters) {
-  const db = await getDb();
-  if (!db) return [];
-  const conditions = [];
-  if (filters?.categoryId) conditions.push(eq(items.categoryId, filters.categoryId));
-  if (filters?.status) conditions.push(eq(items.status, filters.status));
-  if (filters?.search) {
-    const term = `%${filters.search}%`;
-    conditions.push(or(
-      like(items.name, term),
-      like(items.code, term),
-      like(items.brand, term),
-      like(items.model, term),
-      like(items.assetNumber, term),
-      like(items.serialNumber, term)
-    ));
-  }
-  const rows = await db.select({
-    id: items.id,
-    code: items.code,
-    name: items.name,
-    brand: items.brand,
-    model: items.model,
-    description: items.description,
-    categoryId: items.categoryId,
-    categoryName: categories.name,
-    categoryColor: categories.color,
-    serialNumber: items.serialNumber,
-    assetNumber: items.assetNumber,
-    photoUrl: items.photoUrl,
-    photoKey: items.photoKey,
-    status: items.status,
-    condition: items.condition,
-    notes: items.notes,
-    createdAt: items.createdAt,
-    updatedAt: items.updatedAt
-  }).from(items).leftJoin(categories, eq(items.categoryId, categories.id)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(items.updatedAt));
-  return rows;
+  return measurePerformance("DB", "listItems", async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const conditions = [];
+    if (filters?.categoryId) conditions.push(eq(items.categoryId, filters.categoryId));
+    if (filters?.status) conditions.push(eq(items.status, filters.status));
+    if (filters?.search) {
+      const term = `%${filters.search}%`;
+      conditions.push(or(
+        like(items.name, term),
+        like(items.code, term),
+        like(items.brand, term),
+        like(items.model, term),
+        like(items.assetNumber, term),
+        like(items.serialNumber, term)
+      ));
+    }
+    const rows = await db.select({
+      id: items.id,
+      code: items.code,
+      name: items.name,
+      brand: items.brand,
+      model: items.model,
+      description: items.description,
+      categoryId: items.categoryId,
+      categoryName: categories.name,
+      categoryColor: categories.color,
+      serialNumber: items.serialNumber,
+      assetNumber: items.assetNumber,
+      photoUrl: items.photoUrl,
+      photoKey: items.photoKey,
+      status: items.status,
+      condition: items.condition,
+      notes: items.notes,
+      createdAt: items.createdAt,
+      updatedAt: items.updatedAt
+    }).from(items).leftJoin(categories, eq(items.categoryId, categories.id)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(items.updatedAt));
+    return rows;
+  }, (rows) => rows.length);
 }
 async function getItemById(id) {
   const db = await getDb();
@@ -707,46 +824,48 @@ async function recalculateKitStatus(kitId) {
   await db.update(kits).set(touchUpdatedAt({ status: hasUnavailable ? "incompleto" : "completo" })).where(eq(kits.id, kitId));
 }
 async function listReservations(filters) {
-  const db = await getDb();
-  if (!db) return [];
-  const conditions = [];
-  if (filters?.status) conditions.push(eq(reservations.status, filters.status));
-  if (filters?.userId) conditions.push(eq(reservations.userId, filters.userId));
-  if (filters?.startDate) conditions.push(gte(reservations.endDate, filters.startDate));
-  if (filters?.endDate) conditions.push(lte(reservations.startDate, filters.endDate));
-  const rows = await db.select({
-    id: reservations.id,
-    userId: reservations.userId,
-    userName: users.name,
-    userEmail: users.email,
-    userDepartment: users.department,
-    startDate: reservations.startDate,
-    endDate: reservations.endDate,
-    status: reservations.status,
-    checkoutAt: reservations.checkoutAt,
-    checkoutByUserId: reservations.checkoutByUserId,
-    checkinAt: reservations.checkinAt,
-    checkinByUserId: reservations.checkinByUserId,
-    notes: reservations.notes,
-    createdAt: reservations.createdAt,
-    updatedAt: reservations.updatedAt
-  }).from(reservations).leftJoin(users, eq(reservations.userId, users.id)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(reservations.startDate));
-  const resIds = rows.map((r) => r.id);
-  let resItemsData = [];
-  if (resIds.length > 0) {
-    resItemsData = await db.select({
-      reservationId: reservationItems.reservationId,
-      itemId: reservationItems.itemId,
-      kitId: reservationItems.kitId,
-      itemName: items.name,
-      itemCode: items.code,
-      kitName: kits.name
-    }).from(reservationItems).leftJoin(items, eq(reservationItems.itemId, items.id)).leftJoin(kits, eq(reservationItems.kitId, kits.id)).where(inArray(reservationItems.reservationId, resIds));
-  }
-  return rows.map((r) => ({
-    ...r,
-    reservationItems: resItemsData.filter((ri) => ri.reservationId === r.id)
-  }));
+  return measurePerformance("DB", "listReservations", async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const conditions = [];
+    if (filters?.status) conditions.push(eq(reservations.status, filters.status));
+    if (filters?.userId) conditions.push(eq(reservations.userId, filters.userId));
+    if (filters?.startDate) conditions.push(gte(reservations.endDate, filters.startDate));
+    if (filters?.endDate) conditions.push(lte(reservations.startDate, filters.endDate));
+    const rows = await db.select({
+      id: reservations.id,
+      userId: reservations.userId,
+      userName: users.name,
+      userEmail: users.email,
+      userDepartment: users.department,
+      startDate: reservations.startDate,
+      endDate: reservations.endDate,
+      status: reservations.status,
+      checkoutAt: reservations.checkoutAt,
+      checkoutByUserId: reservations.checkoutByUserId,
+      checkinAt: reservations.checkinAt,
+      checkinByUserId: reservations.checkinByUserId,
+      notes: reservations.notes,
+      createdAt: reservations.createdAt,
+      updatedAt: reservations.updatedAt
+    }).from(reservations).leftJoin(users, eq(reservations.userId, users.id)).where(conditions.length > 0 ? and(...conditions) : void 0).orderBy(desc(reservations.startDate));
+    const resIds = rows.map((r) => r.id);
+    let resItemsData = [];
+    if (resIds.length > 0) {
+      resItemsData = await db.select({
+        reservationId: reservationItems.reservationId,
+        itemId: reservationItems.itemId,
+        kitId: reservationItems.kitId,
+        itemName: items.name,
+        itemCode: items.code,
+        kitName: kits.name
+      }).from(reservationItems).leftJoin(items, eq(reservationItems.itemId, items.id)).leftJoin(kits, eq(reservationItems.kitId, kits.id)).where(inArray(reservationItems.reservationId, resIds));
+    }
+    return rows.map((r) => ({
+      ...r,
+      reservationItems: resItemsData.filter((ri) => ri.reservationId === r.id)
+    }));
+  }, (rows) => rows.length);
 }
 async function getReservationById(id) {
   const db = await getDb();
@@ -908,78 +1027,81 @@ async function checkKitConflicts(kitIds, startDate, endDate, excludeReservationI
   return kitConflicts;
 }
 async function getDashboardStats(userId) {
-  const db = await getDb();
-  if (!db) return emptyDashboardStats();
-  const now = Date.now();
-  const reservationScope = userId ? eq(reservations.userId, userId) : void 0;
-  const scopedReservationWhere = (...conditions) => reservationScope ? and(reservationScope, ...conditions) : and(...conditions);
-  const [
-    [itemStats],
-    [kitStats],
-    [userStats],
-    [activeRes],
-    [pendingRes],
-    [completedRes],
-    [canceledRes],
-    [overdueRes]
-  ] = await Promise.all([
-    db.select({
-      total: count(),
-      available: sql`SUM(CASE WHEN ${items.status} = 'disponivel' THEN 1 ELSE 0 END)`,
-      lent: sql`SUM(CASE WHEN ${items.status} = 'emprestado' THEN 1 ELSE 0 END)`,
-      maintenance: sql`SUM(CASE WHEN ${items.status} = 'manutencao' THEN 1 ELSE 0 END)`,
-      lost: sql`SUM(CASE WHEN ${items.status} = 'extraviado' THEN 1 ELSE 0 END)`
-    }).from(items),
-    db.select({ total: count() }).from(kits),
-    db.select({ total: count() }).from(users),
-    db.select({ total: count() }).from(reservations).where(scopedReservationWhere(eq(reservations.status, "ativa"))),
-    db.select({ total: count() }).from(reservations).where(scopedReservationWhere(eq(reservations.status, "pendente"))),
-    db.select({ total: count() }).from(reservations).where(scopedReservationWhere(eq(reservations.status, "concluida"))),
-    db.select({ total: count() }).from(reservations).where(scopedReservationWhere(eq(reservations.status, "cancelada"))),
-    db.select({ total: count() }).from(reservations).where(scopedReservationWhere(eq(reservations.status, "ativa"), lte(reservations.endDate, now)))
-  ]);
-  return buildDashboardStatsFromCounts({
-    totalItems: itemStats?.total ?? 0,
-    availableItems: Number(itemStats?.available ?? 0),
-    lentItems: Number(itemStats?.lent ?? 0),
-    maintenanceItems: Number(itemStats?.maintenance ?? 0),
-    lostItems: Number(itemStats?.lost ?? 0),
-    totalKits: kitStats?.total ?? 0,
-    totalUsers: userStats?.total ?? 0,
-    activeReservations: activeRes?.total ?? 0,
-    pendingReservations: pendingRes?.total ?? 0,
-    completedReservations: completedRes?.total ?? 0,
-    canceledReservations: canceledRes?.total ?? 0,
-    overdueReservations: overdueRes?.total ?? 0
+  return measurePerformance("DB", "getDashboardStats", async () => {
+    const db = await getDb();
+    if (!db) return emptyDashboardStats();
+    const now = Date.now();
+    const reservationScope = userId ? eq(reservations.userId, userId) : void 0;
+    const [
+      [itemStats],
+      [kitStats],
+      [userStats],
+      [reservationStats]
+    ] = await Promise.all([
+      db.select({
+        total: count(),
+        available: sql`SUM(CASE WHEN ${items.status} = 'disponivel' THEN 1 ELSE 0 END)`,
+        lent: sql`SUM(CASE WHEN ${items.status} = 'emprestado' THEN 1 ELSE 0 END)`,
+        maintenance: sql`SUM(CASE WHEN ${items.status} = 'manutencao' THEN 1 ELSE 0 END)`,
+        lost: sql`SUM(CASE WHEN ${items.status} = 'extraviado' THEN 1 ELSE 0 END)`
+      }).from(items),
+      db.select({ total: count() }).from(kits),
+      db.select({ total: count() }).from(users),
+      db.select({
+        active: sql`SUM(CASE WHEN ${reservations.status} = 'ativa' THEN 1 ELSE 0 END)`,
+        pending: sql`SUM(CASE WHEN ${reservations.status} = 'pendente' THEN 1 ELSE 0 END)`,
+        completed: sql`SUM(CASE WHEN ${reservations.status} = 'concluida' THEN 1 ELSE 0 END)`,
+        canceled: sql`SUM(CASE WHEN ${reservations.status} = 'cancelada' THEN 1 ELSE 0 END)`,
+        overdue: sql`SUM(CASE WHEN ${reservations.status} = 'ativa' AND ${reservations.endDate} <= ${now} THEN 1 ELSE 0 END)`
+      }).from(reservations).where(reservationScope)
+    ]);
+    return buildDashboardStatsFromCounts({
+      totalItems: itemStats?.total ?? 0,
+      availableItems: Number(itemStats?.available ?? 0),
+      lentItems: Number(itemStats?.lent ?? 0),
+      maintenanceItems: Number(itemStats?.maintenance ?? 0),
+      lostItems: Number(itemStats?.lost ?? 0),
+      totalKits: kitStats?.total ?? 0,
+      totalUsers: userStats?.total ?? 0,
+      activeReservations: Number(reservationStats?.active ?? 0),
+      pendingReservations: Number(reservationStats?.pending ?? 0),
+      completedReservations: Number(reservationStats?.completed ?? 0),
+      canceledReservations: Number(reservationStats?.canceled ?? 0),
+      overdueReservations: Number(reservationStats?.overdue ?? 0)
+    });
   });
 }
 async function getRecentReservations(limit = 10, userId) {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select({
-    id: reservations.id,
-    userName: users.name,
-    userDepartment: users.department,
-    startDate: reservations.startDate,
-    endDate: reservations.endDate,
-    status: reservations.status,
-    notes: reservations.notes
-  }).from(reservations).leftJoin(users, eq(reservations.userId, users.id)).where(userId ? eq(reservations.userId, userId) : void 0).orderBy(desc(reservations.createdAt)).limit(limit);
+  return measurePerformance("DB", "getRecentReservations", async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select({
+      id: reservations.id,
+      userName: users.name,
+      userDepartment: users.department,
+      startDate: reservations.startDate,
+      endDate: reservations.endDate,
+      status: reservations.status,
+      notes: reservations.notes
+    }).from(reservations).leftJoin(users, eq(reservations.userId, users.id)).where(userId ? eq(reservations.userId, userId) : void 0).orderBy(desc(reservations.createdAt)).limit(limit);
+  }, (rows) => rows.length);
 }
 async function getOverdueReservations(userId) {
-  const db = await getDb();
-  if (!db) return [];
-  const now = Date.now();
-  const conditions = [eq(reservations.status, "ativa"), lte(reservations.endDate, now)];
-  if (userId) conditions.push(eq(reservations.userId, userId));
-  return db.select({
-    id: reservations.id,
-    userName: users.name,
-    userDepartment: users.department,
-    startDate: reservations.startDate,
-    endDate: reservations.endDate,
-    status: reservations.status
-  }).from(reservations).leftJoin(users, eq(reservations.userId, users.id)).where(and(...conditions)).orderBy(asc(reservations.endDate));
+  return measurePerformance("DB", "getOverdueReservations", async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const now = Date.now();
+    const conditions = [eq(reservations.status, "ativa"), lte(reservations.endDate, now)];
+    if (userId) conditions.push(eq(reservations.userId, userId));
+    return db.select({
+      id: reservations.id,
+      userName: users.name,
+      userDepartment: users.department,
+      startDate: reservations.startDate,
+      endDate: reservations.endDate,
+      status: reservations.status
+    }).from(reservations).leftJoin(users, eq(reservations.userId, users.id)).where(and(...conditions)).orderBy(asc(reservations.endDate));
+  }, (rows) => rows.length);
 }
 async function getKitItemIds(kitIds) {
   const db = await getDb();
@@ -1119,23 +1241,34 @@ function getHostFromUrl(value) {
     return null;
   }
 }
+function databaseLooksLikeSupabasePooler(databaseUrl) {
+  const host = getHostFromUrl(databaseUrl);
+  if (!host) return false;
+  return host.includes("pooler.supabase.com");
+}
 function buildAuthDiagnostics(input) {
   return {
     hasDatabaseUrl: Boolean(input.databaseUrl),
+    databaseHost: getHostFromUrl(input.databaseUrl),
+    databaseLooksLikeSupabasePooler: databaseLooksLikeSupabasePooler(
+      input.databaseUrl
+    ),
     hasSupabaseUrl: Boolean(input.supabaseUrl),
     hasSupabaseAnonKey: Boolean(input.supabaseAnonKey),
     supabaseHost: getHostFromUrl(input.supabaseUrl),
-    nodeEnv: input.nodeEnv ?? ""
+    nodeEnv: input.nodeEnv ?? "",
+    dbPing: input.dbPing ?? null
   };
 }
 
 // server/authDiagnostics.ts
-function getAuthDiagnostics() {
+async function getAuthDiagnostics() {
   return buildAuthDiagnostics({
     databaseUrl: ENV.databaseUrl,
     supabaseUrl: ENV.supabaseUrl,
     supabaseAnonKey: ENV.supabaseAnonKey,
-    nodeEnv: process.env.NODE_ENV
+    nodeEnv: process.env.NODE_ENV,
+    dbPing: await pingDb()
   });
 }
 

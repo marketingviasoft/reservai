@@ -112,6 +112,9 @@ O backend ja possui:
 - `USER_NOT_PROVISIONED` diferencia token valido sem usuario interno de usuario anonimo ou token invalido;
 - `auth.diagnostics` expõe apenas flags/host nao sensiveis de ambiente;
 - o listener global de mudanca de sessao nao refaz `auth.me` em `SIGNED_IN`/`TOKEN_REFRESHED`; em `SIGNED_OUT`, limpa o cache de auth;
+- o client usa `httpBatchLink` para agrupar chamadas tRPC simultaneas quando possivel;
+- React Query usa `staleTime` moderado de 30s, `refetchOnWindowFocus: false` e `retry: 1` para reduzir refetches duplicados no carregamento pos-login;
+- logout/SIGNED_OUT limpa o cache do React Query para evitar erro antigo preso entre sessoes;
 - RBAC basico com `adminProcedure` e `protectedProcedure`;
 - persistencia em Postgres/Supabase via Drizzle ORM;
 - upload de imagens para storage via URL pre-assinada.
@@ -179,6 +182,9 @@ Pontos ainda desalinhados:
 - A causa raiz foi `DATABASE_URL` no Vercel usando Direct Connection do Supabase, inadequada para Vercel/serverless e com limitacao de compatibilidade IPv4 indicada pelo Supabase.
 - A correcao aplicada foi trocar `DATABASE_URL` no Vercel para a connection string do **Supabase Transaction Pooler** e fazer redeploy. Apos isso, `auth.bootstrap`, `auth.me`, Dashboard e queries autenticadas passaram a retornar/carregar normalmente.
 - Recomendacao permanente: em producao Vercel/serverless, manter `DATABASE_URL` apontando para o **Supabase Transaction Pooler**, nunca para Direct Connection. Nao registrar secrets ou connection strings completas na documentacao.
+- Foi adicionada instrumentacao segura de performance: logs `[TRPC]` por procedure e logs `[DB]` em consultas criticas. Os logs registram nome, status, duracao e quantidade de linhas quando simples, sem payloads, tokens ou connection strings.
+- `auth.diagnostics` inclui `pingDb`, host seguro do banco e indicador `databaseLooksLikeSupabasePooler`, sem expor `DATABASE_URL`.
+- O Dashboard teve as contagens de reservas consolidadas em uma consulta agregada para reduzir round-trips no banco. Se a lentidao persistir, usar os logs para separar cold start/conexao inicial de query lenta e avaliar indices em etapa futura.
 - Ainda falta piloto operacional controlado com multiplos usuarios reais e volume maior de equipamentos antes de considerar o produto validado operacionalmente.
 - O build passa, mas o Vite alerta que o bundle frontend principal passa de 500 kB apos minificacao. Isso nao bloqueia deploy, mas pode virar pauta de otimizacao.
 
