@@ -175,6 +175,10 @@ Pontos ainda desalinhados:
 - A tentativa de aplicar `drizzle/0002_small_karnak.sql` retornou erro porque `reservation_event_type` ja existia; o diagnostico confirmou que `public.reservation_events` tambem existe no banco verificado.
 - A auditoria foi validada funcionalmente no ambiente publicado: criacao, cancelamento, check-out e check-in geraram eventos reais em `public.reservation_events` com transicoes corretas.
 - O timeout `User upsert timed out after 10000ms` foi tratado reduzindo upserts frequentes no reconhecimento de usuario. Validar em producao navegando rapidamente entre telas apos deploy.
+- Durante a estabilizacao de auth em producao, `auth.bootstrap` retornava `500` apos cerca de 20 segundos, enquanto Supabase Auth (`/auth/v1/user`) retornava `200`. Isso confirmou token valido e falha posterior no acesso ao Postgres.
+- A causa raiz foi `DATABASE_URL` no Vercel usando Direct Connection do Supabase, inadequada para Vercel/serverless e com limitacao de compatibilidade IPv4 indicada pelo Supabase.
+- A correcao aplicada foi trocar `DATABASE_URL` no Vercel para a connection string do **Supabase Transaction Pooler** e fazer redeploy. Apos isso, `auth.bootstrap`, `auth.me`, Dashboard e queries autenticadas passaram a retornar/carregar normalmente.
+- Recomendacao permanente: em producao Vercel/serverless, manter `DATABASE_URL` apontando para o **Supabase Transaction Pooler**, nunca para Direct Connection. Nao registrar secrets ou connection strings completas na documentacao.
 - Ainda falta piloto operacional controlado com multiplos usuarios reais e volume maior de equipamentos antes de considerar o produto validado operacionalmente.
 - O build passa, mas o Vite alerta que o bundle frontend principal passa de 500 kB apos minificacao. Isso nao bloqueia deploy, mas pode virar pauta de otimizacao.
 

@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-05-06 - Correcao de autenticacao em producao com Supabase Transaction Pooler
+
+Resumo:
+
+- Documentada a correcao de producao relacionada a `DATABASE_URL` no Vercel.
+- O login autenticava corretamente no Supabase, mas `auth.bootstrap` retornava `500` apos cerca de 20 segundos.
+- Os logs do Vercel mostravam chamadas para Supabase Auth (`/auth/v1/user`) retornando `200`, confirmando que o token chegava ao backend e era valido.
+- A falha ocorria depois, no acesso ao Postgres para reconhecimento/criacao do usuario interno.
+
+Causa raiz:
+
+- A `DATABASE_URL` de producao estava configurada com a Direct Connection do Supabase.
+- Essa conexao nao era adequada para o ambiente Vercel/serverless; a interface do Supabase indicava limitacao de compatibilidade IPv4 e recomendava uso de pooler.
+
+Correcao aplicada:
+
+- A `DATABASE_URL` no Vercel foi substituida pela connection string do **Supabase Transaction Pooler**.
+- Foi realizado novo redeploy apos a troca da variavel.
+
+Resultado:
+
+- `auth.bootstrap` passou a retornar `200`.
+- `auth.me` passou a retornar `200`.
+- Dashboard e demais queries autenticadas passaram a carregar normalmente.
+
+Recomendacao permanente:
+
+- Em producao no Vercel/serverless, manter `DATABASE_URL` apontando para o **Supabase Transaction Pooler**, nao para a Direct Connection.
+- Nunca registrar connection strings completas, tokens ou senhas na documentacao.
+
+Validacoes:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou com 3 arquivos e 95 testes.
+- `corepack pnpm build`: passou fora do sandbox apos `spawn EPERM`; manteve apenas o alerta conhecido de chunk frontend acima de 500 kB.
+
 ## 2026-05-06 - Correcao da corrida entre auth.bootstrap e auth.me
 
 Resumo:
