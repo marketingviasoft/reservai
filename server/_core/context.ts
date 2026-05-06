@@ -1,7 +1,7 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
 import { ENV } from "./env";
-import { sdk } from "./sdk";
+import { isAuthFailure, sdk, type AuthFailureCode } from "./sdk";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -9,7 +9,7 @@ export type TrpcContext = {
   user: User | null;
   auth: {
     hasAuthorizationHeader: boolean;
-    error: { message: string } | null;
+    error: { code: AuthFailureCode | "AUTH_ERROR"; message: string } | null;
   };
 };
 
@@ -18,7 +18,7 @@ export async function createContext(
 ): Promise<TrpcContext> {
   let user: User | null = null;
   const hasAuthorizationHeader = Boolean(opts.req.headers.authorization);
-  let authError: { message: string } | null = null;
+  let authError: TrpcContext["auth"]["error"] = null;
 
   if (process.env.NODE_ENV !== "production" && !ENV.supabaseUrl) {
     return {
@@ -50,8 +50,9 @@ export async function createContext(
       user = await sdk.authenticateRequest(opts.req);
     } catch (error) {
       // Authentication is optional for public procedures, but keep a safe reason
-      // so auth.session can distinguish anonymous access from auth failures.
+      // so auth routes can distinguish anonymous access from auth failures.
       authError = {
+        code: isAuthFailure(error) ? error.authCode : "AUTH_ERROR",
         message:
           error instanceof Error ? error.message : "Authentication failed",
       };

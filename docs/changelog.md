@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-05-06 - Refatoracao completa do fluxo de autenticacao
+
+Resumo:
+
+- Simplificado o fluxo de autenticacao para uma fonte clara de verdade no frontend.
+- `useAuth` passou a controlar estados explicitos: loading, unauthenticated, authenticated e error.
+- `auth.me` passou a exigir token valido e retornar apenas usuario interno existente.
+- `auth.me` nao cria, nao sincroniza e nao executa `upsertUser`.
+- Criada rota `auth.bootstrap` para criar/sincronizar usuario interno somente durante login ou primeiro acesso com token valido.
+- Removido o redirect global agressivo por `UNAUTHORIZED`; o layout/hook de auth controla login, erro e logout.
+- `AuthForm` agora faz login Supabase, confirma `session.access_token`, chama `auth.bootstrap` e atualiza `auth.me`.
+- O listener Supabase invalida apenas `auth.me`, sem invalidar todas as queries.
+- Removidos `auth.session` e `shared/authRedirect` do fluxo/codigo ativo.
+
+Causa:
+
+- Correcoes incrementais anteriores deixaram auth com muitas fontes de decisao: `auth.session`, `auth.me`, redirects globais e sincronizacao implicita.
+- Isso contribuia para `CancelledError`, tela de sessao nao reconhecida, perda de sessao e upserts em momentos indevidos.
+
+Impacto tecnico:
+
+- Nenhum schema, migration, reserva, auditoria, categoria, equipamento ou check-in/check-out foi alterado.
+- Supabase Auth continua sendo o provedor de sessao.
+- `openId`, `role = "admin" | "user"`, primeiro usuario/admin e `ADMIN_EMAILS` foram preservados.
+- Testes cobrem estados puros de auth, bootstrap unico, `USER_NOT_PROVISIONED`, usuario existente sem upsert e RBAC existente.
+
+Validações:
+
+- `corepack pnpm check`: passou.
+- `corepack pnpm test`: passou com 3 arquivos e 93 testes.
+- `corepack pnpm build`: passou fora do sandbox apos `spawn EPERM`; manteve apenas o alerta conhecido de chunk frontend acima de 500 kB.
+
 ## 2026-04-30 - Reducao de upsert no reconhecimento de usuario
 
 Resumo:

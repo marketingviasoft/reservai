@@ -103,12 +103,13 @@ Rotas tRPC existentes:
 O backend ja possui:
 
 - autenticacao via Supabase Auth;
-- login via Supabase confirma sessao/token antes de atualizar `auth.session`/`auth.me`;
-- reconhecimento de usuario otimizado: token Supabase valido faz lookup por `openId` antes de qualquer `upsertUser`; usuario existente nao atualiza `lastSignedIn` em toda request;
-- `upsertUser` fica restrito a criacao/sincronizacao inicial de usuario e possui deduplicacao basica por `openId` para reduzir concorrencia;
-- `auth.session` diferencia anonimo real de falha de reconhecimento quando existe token;
+- login via Supabase confirma sessao/token antes de chamar `auth.bootstrap` e atualizar `auth.me`;
+- `auth.me` valida token Supabase e busca usuario interno por `openId`, sem criar/sincronizar usuario;
+- `auth.bootstrap` valida token Supabase e cria/sincroniza usuario interno somente quando necessario;
+- `upsertUser` fica fora da navegacao normal e restrito ao bootstrap inicial, com deduplicacao basica por `openId`;
+- `USER_NOT_PROVISIONED` diferencia token valido sem usuario interno de usuario anonimo ou token invalido;
 - `auth.diagnostics` expõe apenas flags/host nao sensiveis de ambiente;
-- o listener de mudanca de sessao invalida apenas queries de autenticacao, evitando cancelamento amplo de queries durante login/logout;
+- o listener de mudanca de sessao invalida apenas `auth.me`, evitando cancelamento amplo de queries durante login/logout;
 - RBAC basico com `adminProcedure` e `protectedProcedure`;
 - persistencia em Postgres/Supabase via Drizzle ORM;
 - upload de imagens para storage via URL pre-assinada.

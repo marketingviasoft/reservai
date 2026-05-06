@@ -20,15 +20,16 @@ import {
   buildReservationItemSelection,
 } from "./reservationSelection";
 import { isReservationBlockingAvailability } from "../shared/reservationStatus";
-import { isCancelledError, isUserUpsertTimeoutError } from "../shared/authErrors";
+import {
+  USER_NOT_PROVISIONED,
+  isCancelledError,
+  isUserUpsertTimeoutError,
+} from "../shared/authErrors";
 import {
   buildAuthDiagnostics,
   buildFrontendAuthDiagnostics,
 } from "../shared/authDiagnostics";
-import {
-  shouldRedirectToLoginAfterUnauthorized,
-  shouldRefreshAuthAfterUnauthorized,
-} from "../shared/authRedirect";
+import { getAuthStatus, shouldBootstrapAuth } from "../shared/authState";
 import {
   buildReservationEventDescription,
   hasReservationEvents,
@@ -89,6 +90,19 @@ function createContext(user?: AuthenticatedUser | null): TrpcContext {
   };
 }
 
+function createAuthErrorContext(
+  code: NonNullable<TrpcContext["auth"]["error"]>["code"],
+  message: string
+): TrpcContext {
+  return {
+    ...createContext(null),
+    auth: {
+      hasAuthorizationHeader: true,
+      error: { code, message },
+    },
+  };
+}
+
 function getErrorCode(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error
     ? String((error as { code: unknown }).code)
@@ -113,11 +127,32 @@ async function expectNotPermissionError(operation: () => Promise<unknown>) {
 }
 
 describe("auth.me", () => {
-  it("returns null when not authenticated", async () => {
+  it("rejects unauthenticated users with UNAUTHORIZED", async () => {
     const ctx = createContext(null);
     const caller = appRouter.createCaller(ctx);
-    const result = await caller.auth.me();
-    expect(result).toBeNull();
+    await expect(caller.auth.me()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+  });
+
+  it("rejects invalid tokens with UNAUTHORIZED", async () => {
+    const ctx = createAuthErrorContext("UNAUTHORIZED", "Invalid Supabase access token");
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.auth.me()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+  });
+
+  it("rejects valid tokens without internal user with USER_NOT_PROVISIONED", async () => {
+    const ctx = createAuthErrorContext(
+      USER_NOT_PROVISIONED,
+      "Supabase token is valid, but internal user is not provisioned"
+    );
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.auth.me()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: USER_NOT_PROVISIONED,
+    });
   });
 
   it("returns user when authenticated", async () => {
@@ -128,28 +163,6 @@ describe("auth.me", () => {
     expect(result).toBeDefined();
     expect(result?.openId).toBe("test-user-open-id");
     expect(result?.name).toBe("Test User");
-  });
-
-  it("returns session diagnostics for anonymous users", async () => {
-    const ctx = createContext(null);
-    const caller = appRouter.createCaller(ctx);
-    const result = await caller.auth.session();
-
-    expect(result.user).toBeNull();
-    expect(result.authenticated).toBe(false);
-    expect(result.hasAuthorizationHeader).toBe(false);
-    expect(result.authError).toBeNull();
-  });
-
-  it("returns session user when context has authenticated user", async () => {
-    const user = createMockUser();
-    const ctx = createContext(user);
-    const caller = appRouter.createCaller(ctx);
-    const result = await caller.auth.session();
-
-    expect(result.user?.openId).toBe("test-user-open-id");
-    expect(result.authenticated).toBe(true);
-    expect(result.authError).toBeNull();
   });
 
   it("returns safe auth diagnostics", async () => {
@@ -211,41 +224,81 @@ describe("auth client error helpers", () => {
     expect(isUserUpsertTimeoutError("User upsert timed out")).toBe(false);
   });
 
-  it("does not redirect CancelledError to login", () => {
+  it("derives clear auth states for the frontend flow", () => {
     expect(
-      shouldRedirectToLoginAfterUnauthorized({
-        isCancelled: true,
-        isUnauthorized: true,
+      getAuthStatus({
+        sessionChecked: false,
         hasSupabaseSession: false,
+        hasUser: false,
+        hasError: false,
+        isAuthQueryLoading: false,
+        isBootstrapPending: false,
+        isLogoutPending: false,
       })
-    ).toBe(false);
+    ).toBe("loading");
+    expect(
+      getAuthStatus({
+        sessionChecked: true,
+        hasSupabaseSession: false,
+        hasUser: false,
+        hasError: false,
+        isAuthQueryLoading: false,
+        isBootstrapPending: false,
+        isLogoutPending: false,
+      })
+    ).toBe("unauthenticated");
+    expect(
+      getAuthStatus({
+        sessionChecked: true,
+        hasSupabaseSession: true,
+        hasUser: true,
+        hasError: false,
+        isAuthQueryLoading: false,
+        isBootstrapPending: false,
+        isLogoutPending: false,
+      })
+    ).toBe("authenticated");
+    expect(
+      getAuthStatus({
+        sessionChecked: true,
+        hasSupabaseSession: true,
+        hasUser: false,
+        hasError: true,
+        isAuthQueryLoading: false,
+        isBootstrapPending: false,
+        isLogoutPending: false,
+      })
+    ).toBe("error");
   });
 
-  it("refreshes auth instead of redirecting when Supabase session still exists", () => {
+  it("bootstraps exactly when auth.me reports USER_NOT_PROVISIONED", () => {
     expect(
-      shouldRefreshAuthAfterUnauthorized({
-        isCancelled: false,
-        isUnauthorized: true,
+      shouldBootstrapAuth({
+        sessionChecked: true,
         hasSupabaseSession: true,
+        authError: new Error(USER_NOT_PROVISIONED),
+        bootstrapAttempted: false,
+        isBootstrapPending: false,
       })
     ).toBe(true);
     expect(
-      shouldRedirectToLoginAfterUnauthorized({
-        isCancelled: false,
-        isUnauthorized: true,
+      shouldBootstrapAuth({
+        sessionChecked: true,
         hasSupabaseSession: true,
+        authError: new Error(USER_NOT_PROVISIONED),
+        bootstrapAttempted: true,
+        isBootstrapPending: false,
       })
     ).toBe(false);
-  });
-
-  it("redirects to login when unauthorized and no Supabase session exists", () => {
     expect(
-      shouldRedirectToLoginAfterUnauthorized({
-        isCancelled: false,
-        isUnauthorized: true,
-        hasSupabaseSession: false,
+      shouldBootstrapAuth({
+        sessionChecked: true,
+        hasSupabaseSession: true,
+        authError: new Error("Invalid login credentials"),
+        bootstrapAttempted: false,
+        isBootstrapPending: false,
       })
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("builds auth diagnostics without exposing secrets", () => {

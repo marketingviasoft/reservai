@@ -38,6 +38,11 @@ function getSessionCookieOptions(req) {
 
 // server/_core/trpc.ts
 import { initTRPC, TRPCError } from "@trpc/server";
+
+// shared/authErrors.ts
+var USER_NOT_PROVISIONED = "USER_NOT_PROVISIONED";
+
+// server/_core/trpc.ts
 import superjson from "superjson";
 var t = initTRPC.context().create({
   transformer: superjson
@@ -47,6 +52,12 @@ var publicProcedure = t.procedure;
 var requireUser = t.middleware(async (opts) => {
   const { ctx, next } = opts;
   if (!ctx.user) {
+    if (ctx.auth.error?.code === USER_NOT_PROVISIONED) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: USER_NOT_PROVISIONED
+      });
+    }
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
   }
   return next({
@@ -1128,6 +1139,149 @@ function getAuthDiagnostics() {
   });
 }
 
+// shared/_core/errors.ts
+var HttpError = class extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.statusCode = statusCode;
+    this.name = "HttpError";
+  }
+};
+var ForbiddenError = (msg) => new HttpError(403, msg);
+
+// server/_core/sdk.ts
+import {
+  createClient as createClient2
+} from "@supabase/supabase-js";
+var AUTH_TIMEOUT_MS = 1e4;
+var pendingUserSyncs = /* @__PURE__ */ new Map();
+var AuthFailure = class extends Error {
+  constructor(authCode, message) {
+    super(message);
+    this.authCode = authCode;
+    this.name = "AuthFailure";
+  }
+};
+async function withTimeout(promise, label) {
+  let timeout;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeout = setTimeout(
+      () => reject(new Error(`${label} timed out after ${AUTH_TIMEOUT_MS}ms`)),
+      AUTH_TIMEOUT_MS
+    );
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+function getBearerToken(req) {
+  const header = req.headers.authorization;
+  if (!header) return null;
+  const value = Array.isArray(header) ? header[0] : header;
+  const match = value.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] ?? null;
+}
+function isAuthFailure(error) {
+  return error instanceof AuthFailure;
+}
+function getSupabaseClient() {
+  if (!ENV.supabaseUrl || !ENV.supabaseAnonKey) {
+    throw new Error(
+      "Supabase auth is not configured: set SUPABASE_URL and SUPABASE_ANON_KEY"
+    );
+  }
+  return createClient2(ENV.supabaseUrl, ENV.supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  });
+}
+function buildSupabaseUserProfile(supabaseUser, signedInAt = /* @__PURE__ */ new Date()) {
+  const email = supabaseUser.email ?? null;
+  const name = supabaseUser.user_metadata?.name ?? supabaseUser.user_metadata?.full_name ?? email ?? "Usu\xE1rio";
+  return {
+    openId: supabaseUser.id,
+    name,
+    email,
+    loginMethod: "supabase",
+    lastSignedIn: signedInAt
+  };
+}
+function shouldSyncUser(existingUser) {
+  return !existingUser;
+}
+async function syncUserOnce(profile, deps) {
+  if (!profile.openId) throw new Error("Cannot sync user without openId");
+  const existingSync = pendingUserSyncs.get(profile.openId);
+  if (existingSync) {
+    await existingSync;
+    return;
+  }
+  const syncPromise = withTimeout(deps.upsertUser(profile), "User upsert").finally(() => {
+    pendingUserSyncs.delete(profile.openId);
+  });
+  pendingUserSyncs.set(profile.openId, syncPromise);
+  await syncPromise;
+}
+async function resolveAuthenticatedUserFromProfile(profile, deps = db_exports) {
+  if (!profile.openId) throw new Error("Cannot authenticate user without openId");
+  const existingUser = await withTimeout(
+    deps.getUserByOpenId(profile.openId),
+    "User lookup"
+  );
+  if (existingUser) return existingUser;
+  throw new AuthFailure(
+    USER_NOT_PROVISIONED,
+    "Supabase token is valid, but internal user is not provisioned"
+  );
+}
+async function bootstrapAuthenticatedUserFromProfile(profile, deps = db_exports) {
+  if (!profile.openId) throw new Error("Cannot authenticate user without openId");
+  const existingUser = await withTimeout(
+    deps.getUserByOpenId(profile.openId),
+    "User lookup"
+  );
+  if (!shouldSyncUser(existingUser)) return existingUser;
+  await syncUserOnce(profile, deps);
+  const user = await withTimeout(
+    deps.getUserByOpenId(profile.openId),
+    "User lookup after sync"
+  );
+  if (!user) {
+    throw ForbiddenError("User not found after sync");
+  }
+  return user;
+}
+var SDKServer = class {
+  async getSupabaseProfileFromRequest(req) {
+    const accessToken = getBearerToken(req);
+    if (!accessToken) {
+      throw new AuthFailure("UNAUTHORIZED", "Missing Supabase access token");
+    }
+    const supabase = getSupabaseClient();
+    const { data, error } = await withTimeout(
+      supabase.auth.getUser(accessToken),
+      "Supabase auth.getUser"
+    );
+    if (error || !data.user) {
+      throw new AuthFailure("UNAUTHORIZED", "Invalid Supabase access token");
+    }
+    return buildSupabaseUserProfile(data.user);
+  }
+  async authenticateRequest(req) {
+    const profile = await this.getSupabaseProfileFromRequest(req);
+    return resolveAuthenticatedUserFromProfile(profile);
+  }
+  async bootstrapRequest(req) {
+    const profile = await this.getSupabaseProfileFromRequest(req);
+    return bootstrapAuthenticatedUserFromProfile(profile);
+  }
+};
+var sdk = new SDKServer();
+
 // server/reservationAccess.ts
 import { TRPCError as TRPCError2 } from "@trpc/server";
 function isAdmin(actor) {
@@ -1183,6 +1337,19 @@ async function getReservationMovementItemIds(reservation) {
   );
   const legacyKitItemIds = legacyKitIds.length > 0 ? await getKitItemIds(legacyKitIds) : [];
   return Array.from(/* @__PURE__ */ new Set([...itemIds, ...legacyKitItemIds]));
+}
+async function runAuthOperation(operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isAuthFailure(error)) {
+      throw new TRPCError3({
+        code: error.authCode === "UNAUTHORIZED" ? "UNAUTHORIZED" : "FORBIDDEN",
+        message: error.message
+      });
+    }
+    throw error;
+  }
 }
 var categoryRouter = router({
   list: protectedProcedure.query(() => listCategories()),
@@ -1517,13 +1684,10 @@ var dashboardRouter = router({
 });
 var appRouter = router({
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
-    session: publicProcedure.query((opts) => ({
-      user: opts.ctx.user,
-      authenticated: Boolean(opts.ctx.user),
-      hasAuthorizationHeader: opts.ctx.auth.hasAuthorizationHeader,
-      authError: opts.ctx.user ? null : opts.ctx.auth.error
-    })),
+    me: protectedProcedure.query((opts) => opts.ctx.user),
+    bootstrap: publicProcedure.mutation(
+      ({ ctx }) => runAuthOperation(() => sdk.bootstrapRequest(ctx.req))
+    ),
     diagnostics: publicProcedure.query(() => getAuthDiagnostics()),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
@@ -1538,121 +1702,6 @@ var appRouter = router({
   reservation: reservationRouter,
   dashboard: dashboardRouter
 });
-
-// shared/_core/errors.ts
-var HttpError = class extends Error {
-  constructor(statusCode, message) {
-    super(message);
-    this.statusCode = statusCode;
-    this.name = "HttpError";
-  }
-};
-var ForbiddenError = (msg) => new HttpError(403, msg);
-
-// server/_core/sdk.ts
-import {
-  createClient as createClient2
-} from "@supabase/supabase-js";
-var AUTH_TIMEOUT_MS = 1e4;
-var pendingUserSyncs = /* @__PURE__ */ new Map();
-async function withTimeout(promise, label) {
-  let timeout;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeout = setTimeout(
-      () => reject(new Error(`${label} timed out after ${AUTH_TIMEOUT_MS}ms`)),
-      AUTH_TIMEOUT_MS
-    );
-  });
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
-function getBearerToken(req) {
-  const header = req.headers.authorization;
-  if (!header) return null;
-  const value = Array.isArray(header) ? header[0] : header;
-  const match = value.match(/^Bearer\s+(.+)$/i);
-  return match?.[1] ?? null;
-}
-function getSupabaseClient() {
-  if (!ENV.supabaseUrl || !ENV.supabaseAnonKey) {
-    throw new Error(
-      "Supabase auth is not configured: set SUPABASE_URL and SUPABASE_ANON_KEY"
-    );
-  }
-  return createClient2(ENV.supabaseUrl, ENV.supabaseAnonKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false
-    }
-  });
-}
-function buildSupabaseUserProfile(supabaseUser, signedInAt = /* @__PURE__ */ new Date()) {
-  const email = supabaseUser.email ?? null;
-  const name = supabaseUser.user_metadata?.name ?? supabaseUser.user_metadata?.full_name ?? email ?? "Usu\xE1rio";
-  return {
-    openId: supabaseUser.id,
-    name,
-    email,
-    loginMethod: "supabase",
-    lastSignedIn: signedInAt
-  };
-}
-function shouldSyncUser(existingUser) {
-  return !existingUser;
-}
-async function syncUserOnce(profile, deps) {
-  if (!profile.openId) throw new Error("Cannot sync user without openId");
-  const existingSync = pendingUserSyncs.get(profile.openId);
-  if (existingSync) {
-    await existingSync;
-    return;
-  }
-  const syncPromise = withTimeout(deps.upsertUser(profile), "User upsert").finally(() => {
-    pendingUserSyncs.delete(profile.openId);
-  });
-  pendingUserSyncs.set(profile.openId, syncPromise);
-  await syncPromise;
-}
-async function resolveAuthenticatedUserFromProfile(profile, deps = db_exports) {
-  if (!profile.openId) throw new Error("Cannot authenticate user without openId");
-  const existingUser = await withTimeout(
-    deps.getUserByOpenId(profile.openId),
-    "User lookup"
-  );
-  if (!shouldSyncUser(existingUser)) return existingUser;
-  await syncUserOnce(profile, deps);
-  const user = await withTimeout(
-    deps.getUserByOpenId(profile.openId),
-    "User lookup after sync"
-  );
-  if (!user) {
-    throw ForbiddenError("User not found after sync");
-  }
-  return user;
-}
-var SDKServer = class {
-  async authenticateRequest(req) {
-    const accessToken = getBearerToken(req);
-    if (!accessToken) {
-      throw ForbiddenError("Missing Supabase access token");
-    }
-    const supabase = getSupabaseClient();
-    const { data, error } = await withTimeout(
-      supabase.auth.getUser(accessToken),
-      "Supabase auth.getUser"
-    );
-    if (error || !data.user) {
-      throw ForbiddenError("Invalid Supabase access token");
-    }
-    const supabaseUser = data.user;
-    const profile = buildSupabaseUserProfile(supabaseUser);
-    return resolveAuthenticatedUserFromProfile(profile);
-  }
-};
-var sdk = new SDKServer();
 
 // server/_core/context.ts
 async function createContext(opts) {
@@ -1688,6 +1737,7 @@ async function createContext(opts) {
       user = await sdk.authenticateRequest(opts.req);
     } catch (error) {
       authError = {
+        code: isAuthFailure(error) ? error.authCode : "AUTH_ERROR",
         message: error instanceof Error ? error.message : "Authentication failed"
       };
       user = null;

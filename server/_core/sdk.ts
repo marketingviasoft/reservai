@@ -1,4 +1,5 @@
 import { ForbiddenError } from "@shared/_core/errors";
+import { USER_NOT_PROVISIONED } from "@shared/authErrors";
 import {
   createClient,
   type SupabaseClient,
@@ -11,6 +12,18 @@ import { ENV } from "./env";
 
 const AUTH_TIMEOUT_MS = 10_000;
 const pendingUserSyncs = new Map<string, Promise<void>>();
+
+export type AuthFailureCode = "UNAUTHORIZED" | typeof USER_NOT_PROVISIONED;
+
+export class AuthFailure extends Error {
+  constructor(
+    public authCode: AuthFailureCode,
+    message: string
+  ) {
+    super(message);
+    this.name = "AuthFailure";
+  }
+}
 
 type UserSyncDeps = {
   getUserByOpenId: (openId: string) => Promise<User | undefined>;
@@ -40,6 +53,10 @@ function getBearerToken(req: Request): string | null {
   const value = Array.isArray(header) ? header[0] : header;
   const match = value.match(/^Bearer\s+(.+)$/i);
   return match?.[1] ?? null;
+}
+
+export function isAuthFailure(error: unknown): error is AuthFailure {
+  return error instanceof AuthFailure;
 }
 
 function getSupabaseClient(): SupabaseClient {
@@ -100,6 +117,24 @@ async function syncUserOnce(profile: InsertUser, deps: UserSyncDeps) {
 
 export async function resolveAuthenticatedUserFromProfile(
   profile: InsertUser,
+  deps: Pick<UserSyncDeps, "getUserByOpenId"> = db
+) {
+  if (!profile.openId) throw new Error("Cannot authenticate user without openId");
+
+  const existingUser = await withTimeout(
+    deps.getUserByOpenId(profile.openId),
+    "User lookup",
+  );
+  if (existingUser) return existingUser;
+
+  throw new AuthFailure(
+    USER_NOT_PROVISIONED,
+    "Supabase token is valid, but internal user is not provisioned"
+  );
+}
+
+export async function bootstrapAuthenticatedUserFromProfile(
+  profile: InsertUser,
   deps: UserSyncDeps = db
 ) {
   if (!profile.openId) throw new Error("Cannot authenticate user without openId");
@@ -124,10 +159,10 @@ export async function resolveAuthenticatedUserFromProfile(
 }
 
 class SDKServer {
-  async authenticateRequest(req: Request): Promise<User> {
+  private async getSupabaseProfileFromRequest(req: Request): Promise<InsertUser> {
     const accessToken = getBearerToken(req);
     if (!accessToken) {
-      throw ForbiddenError("Missing Supabase access token");
+      throw new AuthFailure("UNAUTHORIZED", "Missing Supabase access token");
     }
 
     const supabase = getSupabaseClient();
@@ -137,12 +172,20 @@ class SDKServer {
     );
 
     if (error || !data.user) {
-      throw ForbiddenError("Invalid Supabase access token");
+      throw new AuthFailure("UNAUTHORIZED", "Invalid Supabase access token");
     }
 
-    const supabaseUser = data.user;
-    const profile = buildSupabaseUserProfile(supabaseUser);
+    return buildSupabaseUserProfile(data.user);
+  }
+
+  async authenticateRequest(req: Request): Promise<User> {
+    const profile = await this.getSupabaseProfileFromRequest(req);
     return resolveAuthenticatedUserFromProfile(profile);
+  }
+
+  async bootstrapRequest(req: Request): Promise<User> {
+    const profile = await this.getSupabaseProfileFromRequest(req);
+    return bootstrapAuthenticatedUserFromProfile(profile);
   }
 }
 

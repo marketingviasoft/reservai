@@ -1,3 +1,5 @@
+export const USER_NOT_PROVISIONED = "USER_NOT_PROVISIONED";
+
 export function isCancelledError(error: unknown) {
   if (!(error instanceof Error)) return false;
 
@@ -11,4 +13,9 @@ export function isCancelledError(error: unknown) {
 export function isUserUpsertTimeoutError(error: unknown) {
   if (!(error instanceof Error)) return false;
   return error.message.includes("User upsert timed out");
+}
+
+export function isUserNotProvisionedError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return error.message.includes(USER_NOT_PROVISIONED);
 }

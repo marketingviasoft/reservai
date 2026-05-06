@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { InsertUser, User } from "../drizzle/schema";
 import {
+  bootstrapAuthenticatedUserFromProfile,
+  AuthFailure,
   buildSupabaseUserProfile,
   resolveAuthenticatedUserFromProfile,
   shouldSyncUser,
 } from "./_core/sdk";
+import { USER_NOT_PROVISIONED } from "../shared/authErrors";
 
 function createUser(overrides?: Partial<User>): User {
   return {
@@ -40,7 +43,7 @@ describe("auth user synchronization", () => {
       upsertUser: vi.fn(),
     };
 
-    const result = await resolveAuthenticatedUserFromProfile(profile, deps);
+    const result = await bootstrapAuthenticatedUserFromProfile(profile, deps);
 
     expect(result).toBe(existingUser);
     expect(deps.getUserByOpenId).toHaveBeenCalledTimes(1);
@@ -58,7 +61,7 @@ describe("auth user synchronization", () => {
       upsertUser: vi.fn().mockResolvedValue(undefined),
     };
 
-    const result = await resolveAuthenticatedUserFromProfile(profile, deps);
+    const result = await bootstrapAuthenticatedUserFromProfile(profile, deps);
 
     expect(result).toBe(createdUser);
     expect(deps.getUserByOpenId).toHaveBeenCalledTimes(2);
@@ -82,8 +85,8 @@ describe("auth user synchronization", () => {
       upsertUser: vi.fn().mockReturnValue(upsertPromise),
     };
 
-    const firstAuth = resolveAuthenticatedUserFromProfile(profile, deps);
-    const secondAuth = resolveAuthenticatedUserFromProfile(profile, deps);
+    const firstAuth = bootstrapAuthenticatedUserFromProfile(profile, deps);
+    const secondAuth = bootstrapAuthenticatedUserFromProfile(profile, deps);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(deps.upsertUser).toHaveBeenCalledTimes(1);
     finishUpsert?.();
@@ -96,6 +99,23 @@ describe("auth user synchronization", () => {
     expect(deps.getUserByOpenId).toHaveBeenCalledTimes(4);
   });
 
+  it("reports USER_NOT_PROVISIONED without upsert when user does not exist", async () => {
+    const deps = {
+      getUserByOpenId: vi.fn().mockResolvedValue(undefined),
+      upsertUser: vi.fn(),
+    };
+
+    await expect(
+      resolveAuthenticatedUserFromProfile(profile, deps)
+    ).rejects.toMatchObject({
+      authCode: USER_NOT_PROVISIONED,
+    });
+    await expect(
+      resolveAuthenticatedUserFromProfile(profile, deps)
+    ).rejects.toBeInstanceOf(AuthFailure);
+    expect(deps.upsertUser).not.toHaveBeenCalled();
+  });
+
   it("does not let upsert failure affect an existing user", async () => {
     const existingUser = createUser();
     const deps = {
@@ -104,7 +124,7 @@ describe("auth user synchronization", () => {
     };
 
     await expect(
-      resolveAuthenticatedUserFromProfile(profile, deps)
+      bootstrapAuthenticatedUserFromProfile(profile, deps)
     ).resolves.toBe(existingUser);
     expect(deps.upsertUser).not.toHaveBeenCalled();
   });

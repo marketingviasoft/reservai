@@ -6,6 +6,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { storagePut } from "./storage";
 import { getAuthDiagnostics } from "./authDiagnostics";
+import { isAuthFailure, sdk } from "./_core/sdk";
 import {
   assertAdminReservationOperator,
   assertCanCancelReservation,
@@ -28,6 +29,20 @@ async function getReservationMovementItemIds(reservation: {
   const legacyKitItemIds =
     legacyKitIds.length > 0 ? await db.getKitItemIds(legacyKitIds) : [];
   return Array.from(new Set([...itemIds, ...legacyKitItemIds]));
+}
+
+async function runAuthOperation<T>(operation: () => Promise<T>) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isAuthFailure(error)) {
+      throw new TRPCError({
+        code: error.authCode === "UNAUTHORIZED" ? "UNAUTHORIZED" : "FORBIDDEN",
+        message: error.message,
+      });
+    }
+    throw error;
+  }
 }
 
 // ─── Category Router ─────────────────────────────────────────────────────────
@@ -454,13 +469,10 @@ const dashboardRouter = router({
 // ─── App Router ──────────────────────────────────────────────────────────────
 export const appRouter = router({
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
-    session: publicProcedure.query((opts) => ({
-      user: opts.ctx.user,
-      authenticated: Boolean(opts.ctx.user),
-      hasAuthorizationHeader: opts.ctx.auth.hasAuthorizationHeader,
-      authError: opts.ctx.user ? null : opts.ctx.auth.error,
-    })),
+    me: protectedProcedure.query((opts) => opts.ctx.user),
+    bootstrap: publicProcedure.mutation(({ ctx }) =>
+      runAuthOperation(() => sdk.bootstrapRequest(ctx.req))
+    ),
     diagnostics: publicProcedure.query(() => getAuthDiagnostics()),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);

@@ -4,15 +4,18 @@
 
 1. Usuario acessa o frontend.
 2. Cliente usa Supabase Auth quando `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` estao configuradas.
-3. Backend autentica chamadas tRPC pelo contexto em `server/_core/context.ts` e SDK em `server/_core/sdk.ts`.
-4. Apos login com Supabase, o frontend confirma que a sessao possui token e atualiza `auth.session`/`auth.me`.
-5. O listener de mudanca de sessao invalida somente queries de autenticacao, evitando cancelar queries operacionais durante login/logout.
-6. Se uma query protegida retornar `UNAUTHORIZED`, o frontend verifica primeiro se ainda existe sessao Supabase antes de redirecionar para login.
-7. Se existe sessao Supabase, o ReservAI tenta refazer `auth.session`/`auth.me` e mostra erro util se o backend nao reconhecer a sessao.
-8. Cancelamentos internos de query nao sao exibidos como erro de senha ou falha de autenticacao.
-9. Erros reais do Supabase, como senha invalida ou usuario inexistente, continuam sendo exibidos ao usuario.
-10. `auth.diagnostics` expõe somente flags/host nao sensiveis para diagnostico de ambiente.
-11. Em desenvolvimento sem Supabase configurado, o backend usa um usuario local admin.
+3. Frontend chama `supabase.auth.getSession()` antes de decidir entre loading, login ou app autenticado.
+4. Sem sessao Supabase, a tela de login e exibida.
+5. Com sessao Supabase, o frontend chama `auth.me`.
+6. `auth.me` valida o token no backend e busca usuario interno por `openId`; nao cria nem sincroniza usuario.
+7. Se `auth.me` indicar `USER_NOT_PROVISIONED`, o frontend chama `auth.bootstrap` uma vez e refaz `auth.me`.
+8. `auth.bootstrap` valida o token Supabase e cria/sincroniza o usuario interno somente quando necessario.
+9. Apos login com Supabase, `AuthForm` confirma `session.access_token`, chama `auth.bootstrap` e atualiza `auth.me`.
+10. Logout chama `supabase.auth.signOut`, limpa cache de auth e volta para login.
+11. Cancelamentos internos de query nao sao exibidos como erro de senha ou falha de autenticacao.
+12. Erros reais do Supabase, como senha invalida ou usuario inexistente, continuam sendo exibidos ao usuario.
+13. `auth.diagnostics` expõe somente flags/host nao sensiveis para diagnostico de ambiente.
+14. Em desenvolvimento sem Supabase configurado, o backend usa um usuario local admin.
 
 ## Dashboard
 

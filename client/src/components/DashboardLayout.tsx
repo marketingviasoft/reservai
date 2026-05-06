@@ -80,7 +80,7 @@ export default function DashboardLayout({
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
-  const { error, hasSupabaseSession, loading, logout, refresh, user } = useAuth();
+  const { error, loading, logout, refresh, status, user } = useAuth();
   const isUserUpsertTimeout = isUserUpsertTimeoutError(error);
 
   useEffect(() => {
@@ -91,7 +91,7 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />;
   }
 
-  if (!user && hasSupabaseSession) {
+  if (status === "error") {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-4 p-8 max-w-md w-full text-center">
@@ -100,10 +100,10 @@ export default function DashboardLayout({
           </div>
           <div>
             <h1 className="text-xl font-semibold tracking-tight">
-              Sessão não reconhecida
+              Não foi possível validar sua sessão
             </h1>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              Login realizado no Supabase, mas o ReservAI não conseguiu reconhecer a sessão. Verifique a configuração do ambiente ou tente novamente.
+              Sua sessão Supabase continua localmente ativa, mas o ReservAI não conseguiu concluir a validação no backend. Tente novamente.
             </p>
             {isUserUpsertTimeout && (
               <p className="text-sm text-muted-foreground mt-2 leading-relaxed">

@@ -1,5 +1,6 @@
 import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
 import { initTRPC, TRPCError } from "@trpc/server";
+import { USER_NOT_PROVISIONED } from "@shared/authErrors";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
 
@@ -14,6 +15,12 @@ const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
 
   if (!ctx.user) {
+    if (ctx.auth.error?.code === USER_NOT_PROVISIONED) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: USER_NOT_PROVISIONED,
+      });
+    }
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
   }
 

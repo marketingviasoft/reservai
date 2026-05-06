@@ -11,6 +11,18 @@ ReservAI e uma aplicacao interna para controle de equipamentos de marketing, res
 
 No banco, o papel `user` representa o colaborador comum.
 
+## Autenticacao
+
+- Supabase Auth e a fonte da sessao no frontend.
+- O frontend envia o access token Supabase no header `Authorization`.
+- O backend valida o token antes de liberar qualquer rota protegida.
+- `auth.me` retorna somente o usuario interno ja existente; nao cria, nao sincroniza e nao executa `upsertUser`.
+- `auth.bootstrap` e a rota responsavel por criar/sincronizar usuario interno durante login ou primeiro acesso com token valido.
+- Usuario Supabase valido sem usuario interno recebe erro claro `USER_NOT_PROVISIONED`.
+- `openId` continua sendo o vinculo entre usuario Supabase e usuario interno.
+- `role = "admin" | "user"` continua sendo a base de RBAC.
+- A regra de primeiro usuario/admin e `ADMIN_EMAILS` permanece concentrada na criacao/sincronizacao inicial de usuario.
+
 ## Equipamentos
 
 - Cada equipamento fisico e representado por um item em `items`.
